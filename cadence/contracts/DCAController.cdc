@@ -35,8 +35,8 @@ access(all) contract DCAController {
 
     /// Public interface for reading controller state
     access(all) resource interface ControllerPublic {
-        access(all) fun getPlanIds(): [UInt64]
-        access(all) fun getPlan(id: UInt64): &DCAPlan.Plan?
+        access(all) view fun getPlanIds(): [UInt64]
+        access(all) view fun getPlan(id: UInt64): &DCAPlan.Plan?
         access(all) fun getAllPlans(): [DCAPlan.PlanDetails]
         access(all) fun getActivePlans(): [DCAPlan.PlanDetails]
     }
@@ -149,12 +149,12 @@ access(all) contract DCAController {
         // ========================================
 
         /// Get all plan IDs in this controller
-        access(all) fun getPlanIds(): [UInt64] {
+        access(all) view fun getPlanIds(): [UInt64] {
             return self.plans.keys
         }
 
         /// Get a read-only reference to a specific plan
-        access(all) fun getPlan(id: UInt64): &DCAPlan.Plan? {
+        access(all) view fun getPlan(id: UInt64): &DCAPlan.Plan? {
             return &self.plans[id]
         }
 
@@ -183,7 +183,7 @@ access(all) contract DCAController {
         }
 
         /// Check if controller has required capabilities configured
-        access(all) fun isFullyConfigured(): Bool {
+        access(all) view fun isFullyConfigured(): Bool {
             if let sourceCap = self.sourceVaultCap {
                 if let targetCap = self.targetVaultCap {
                     return sourceCap.check() && targetCap.check()
