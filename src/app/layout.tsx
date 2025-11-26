@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Flow React SDK Starter",
+  title: "Flow DCA - Dollar-Cost Averaging on Flow Blockchain",
   description:
-    "A Next.js starter template for Flow blockchain applications using @onflow/react-sdk",
+    "Automate your Flow investments with smart, scheduled DCA strategies. Reduce risk and build wealth over time using Flow's Scheduled Transactions and DeFi Actions.",
 };
 
 export default function RootLayout({
