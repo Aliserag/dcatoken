@@ -18,11 +18,24 @@
 - ✅ `DCAController.cdc` - User's DCA management resource
 - ✅ `DCATransactionHandler.cdc` - NEW: Implements `FlowTransactionScheduler.TransactionHandler` interface
 
+### 4. Dependencies Configured ✅ NEW!
+- ✅ `flow.json` updated with all required dependencies
+- ✅ DeFiActions framework (DeFiActions, DeFiActionsMathUtils, DeFiActionsUtils)
+- ✅ SwapConnectors for composable swaps
+- ✅ IncrementFiSwapConnectors for FLOW → Beaver integration
+- ✅ FlowTransactionScheduler + Utils for autonomous execution
+- ✅ Core standards (FungibleToken, FlowToken, MetadataViews)
+
 ## 🚧 Next Steps (In Order)
 
-### Step 1: Update `flow.json` with Dependencies
+### Step 1: Install Dependencies ✅ READY!
 
-The `flow.json` file needs dependencies from both scaffolds merged in.
+**Action Required:**
+```bash
+flow deps install
+```
+
+This will download all the dependencies we configured in `flow.json`.
 
 **Required dependencies** (from `/tmp/flow-actions-scaffold/flow.json`):
 ```json
