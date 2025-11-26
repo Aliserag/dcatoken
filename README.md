@@ -53,6 +53,76 @@ flow project deploy --network emulator
 
 **Then follow the complete testing workflow in** → **[TESTING_GUIDE.md](./TESTING_GUIDE.md)**
 
+### 4. Run Frontend
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+Open [http://localhost:3001](http://localhost:3001) in your browser.
+
+## 🎨 Frontend Features
+
+The DCA application includes a production-ready Next.js frontend with full blockchain integration:
+
+### Real Blockchain Integration
+- ✅ **FCL Wallet Connection** - Connect with any Flow wallet (Dev Wallet for emulator)
+- ✅ **Live Balance Fetching** - Real-time FLOW balance from blockchain
+- ✅ **Transaction Execution** - Send real transactions to create DCA plans
+- ✅ **Real-Time Data** - Fetch and display actual plan data from smart contracts
+- ✅ **Transaction Status** - Visual feedback for pending, executing, and sealed transactions
+
+### User Workflows
+
+**First-Time User:**
+1. Connect wallet via FCL
+2. Setup DCA controller (one-time, one-click setup)
+3. Create first DCA plan with desired parameters
+4. Monitor plan execution in dashboard
+
+**Returning User:**
+1. Wallet auto-connects
+2. View all active, paused, and completed plans
+3. Create additional plans
+4. Track performance metrics (total invested, acquired, average price)
+
+### Frontend Components
+
+| Component | Purpose | Blockchain Integration |
+|-----------|---------|------------------------|
+| `DCAHeader` | Wallet connection & balance | FCL authentication, balance query script |
+| `CreateDCAPlan` | Plan creation form | Controller setup transaction, create plan transaction |
+| `DCADashboard` | Plan overview & stats | Get all plans script, real-time data transformation |
+
+### Transaction Templates
+
+All Cadence code is in `src/lib/cadence-transactions.ts`:
+
+```typescript
+SETUP_CONTROLLER_TX    // Initialize user's DCA controller
+CREATE_PLAN_TX         // Create new DCA plan
+GET_ALL_PLANS_SCRIPT   // Query user's plans
+CHECK_CONTROLLER_SCRIPT // Check if controller exists
+```
+
+### Configuration
+
+Create `.env.local` to switch networks:
+
+```env
+# Emulator (default)
+NEXT_PUBLIC_FLOW_NETWORK=emulator
+
+# Testnet
+# NEXT_PUBLIC_FLOW_NETWORK=testnet
+```
+
+See [FRONTEND_GUIDE.md](./FRONTEND_GUIDE.md) for complete frontend documentation.
+
 ## 📦 Project Structure
 
 ```
