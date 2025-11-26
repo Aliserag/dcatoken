@@ -1,39 +1,114 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useFlow } from "@onflow/react-sdk";
+import * as fcl from "@onflow/fcl";
+import { useTransaction } from "@/hooks/use-transaction";
+import {
+  SETUP_CONTROLLER_TX,
+  CREATE_PLAN_TX,
+  CHECK_CONTROLLER_SCRIPT,
+} from "@/lib/cadence-transactions";
+import { TransactionStatus } from "@/config/fcl-config";
 
 export function CreateDCAPlan() {
+  const { user } = useFlow();
   const [amount, setAmount] = useState("");
   const [interval, setInterval] = useState("7");
   const [slippage, setSlippage] = useState("1");
   const [maxExecutions, setMaxExecutions] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
+  const [controllerConfigured, setControllerConfigured] = useState(false);
+  const [checkingController, setCheckingController] = useState(false);
+
+  const {
+    status: txStatus,
+    txId,
+    error: txError,
+    executeTransaction,
+    resetTransaction,
+    isLoading: txLoading,
+    isSuccess: txSuccess,
+  } = useTransaction();
+
+  // Check if controller is configured when user connects
+  useEffect(() => {
+    if (user?.addr) {
+      checkController(user.addr);
+    }
+  }, [user?.addr]);
+
+  const checkController = async (address: string) => {
+    setCheckingController(true);
+    try {
+      const result = await fcl.query({
+        cadence: CHECK_CONTROLLER_SCRIPT,
+        args: (arg, t) => [arg(address, t.Address)],
+      });
+      setControllerConfigured(result);
+    } catch (error) {
+      console.error("Error checking controller:", error);
+      setControllerConfigured(false);
+    } finally {
+      setCheckingController(false);
+    }
+  };
+
+  const setupController = async () => {
+    if (!user?.addr) {
+      alert("Please connect your wallet first");
+      return;
+    }
+
+    const result = await executeTransaction(
+      SETUP_CONTROLLER_TX,
+      (arg, t) => [],
+      1000
+    );
+
+    if (result.success) {
+      setControllerConfigured(true);
+      setTimeout(() => resetTransaction(), 3000);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsCreating(true);
 
-    try {
-      // TODO: Integrate with Flow transactions
-      console.log("Creating DCA plan:", {
-        amount,
-        interval,
-        slippage,
-        maxExecutions,
-      });
+    if (!user?.addr) {
+      alert("Please connect your wallet first");
+      return;
+    }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    if (!controllerConfigured) {
+      alert("Please setup your DCA controller first");
+      return;
+    }
 
-      alert("DCA Plan created successfully!");
-      // Reset form
-      setAmount("");
-      setMaxExecutions("");
-    } catch (error) {
-      console.error("Error creating plan:", error);
-      alert("Failed to create DCA plan");
-    } finally {
-      setIsCreating(false);
+    // Convert slippage percentage to basis points (1% = 100 bps)
+    const slippageBps = Math.floor(parseFloat(slippage) * 100);
+
+    // First execution delay: 5 minutes from now (300 seconds)
+    const firstExecutionDelay = 300;
+
+    const result = await executeTransaction(
+      CREATE_PLAN_TX,
+      (arg, t) => [
+        arg(amount, t.UFix64),
+        arg(interval, t.UInt64),
+        arg(slippageBps.toString(), t.UInt64),
+        arg(maxExecutions || null, t.Optional(t.UInt64)),
+        arg(firstExecutionDelay.toString(), t.UInt64),
+      ],
+      1000
+    );
+
+    if (result.success) {
+      // Reset form after success
+      setTimeout(() => {
+        setAmount("");
+        setMaxExecutions("");
+        resetTransaction();
+      }, 3000);
     }
   };
 
@@ -205,38 +280,153 @@ export function CreateDCAPlan() {
           </div>
         )}
 
+        {/* Controller Setup Notice */}
+        {user?.addr && !controllerConfigured && !checkingController && (
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <svg
+                className="w-6 h-6 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <div className="flex-1">
+                <h4 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-1">
+                  Setup Required
+                </h4>
+                <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-3">
+                  Before creating your first DCA plan, you need to setup your
+                  DCA controller. This is a one-time setup.
+                </p>
+                <button
+                  onClick={setupController}
+                  disabled={txLoading}
+                  className="bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 text-white font-medium px-4 py-2 rounded-lg transition-colors"
+                >
+                  {txLoading ? "Setting up..." : "Setup Controller Now"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Transaction Status */}
+        {txStatus !== TransactionStatus.IDLE && (
+          <div
+            className={`border-2 rounded-xl p-4 ${
+              txStatus === TransactionStatus.SEALED
+                ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+                : txStatus === TransactionStatus.ERROR
+                ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              {txLoading && (
+                <svg
+                  className="animate-spin h-6 w-6 text-blue-600"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              )}
+              {txSuccess && (
+                <svg
+                  className="w-6 h-6 text-green-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              )}
+              {txStatus === TransactionStatus.ERROR && (
+                <svg
+                  className="w-6 h-6 text-red-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              )}
+              <div className="flex-1">
+                <h4 className="font-semibold mb-1">
+                  {txLoading && "Processing Transaction..."}
+                  {txSuccess && "Success!"}
+                  {txStatus === TransactionStatus.ERROR && "Transaction Failed"}
+                </h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {txStatus === TransactionStatus.PENDING &&
+                    "Waiting for approval..."}
+                  {txStatus === TransactionStatus.EXECUTING &&
+                    "Executing transaction..."}
+                  {txStatus === TransactionStatus.SEALING &&
+                    "Sealing transaction..."}
+                  {txSuccess && "Your DCA plan has been created successfully!"}
+                  {txStatus === TransactionStatus.ERROR && txError}
+                </p>
+                {txId && (
+                  <p className="text-xs font-mono text-gray-500 mt-2">
+                    TX: {txId}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={isCreating || !amount}
-          className="w-full bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-300 disabled:cursor-not-allowed text-black font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-[#00EF8B]/30 disabled:shadow-none"
+          disabled={
+            txLoading ||
+            !amount ||
+            !user?.addr ||
+            !controllerConfigured ||
+            checkingController
+          }
+          className="w-full bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-black dark:disabled:text-gray-400 font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-[#00EF8B]/30 disabled:shadow-none disabled:transform-none"
         >
-          {isCreating ? (
-            <span className="flex items-center justify-center gap-2">
-              <svg
-                className="animate-spin h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              Creating Plan...
-            </span>
-          ) : (
-            "Create DCA Plan"
-          )}
+          {!user?.addr
+            ? "Connect Wallet to Continue"
+            : checkingController
+            ? "Checking setup..."
+            : !controllerConfigured
+            ? "Setup Required First"
+            : txLoading
+            ? "Creating Plan..."
+            : "Create DCA Plan"}
         </button>
 
         {/* Info Notice */}
