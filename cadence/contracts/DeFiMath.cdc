@@ -125,7 +125,7 @@ access(all) contract DeFiMath {
     /// @return Price as UFix64 for display purposes
     ///
     /// Note: This is for display/logging only. Use FP128 for all calculations.
-    access(all) fun fp128ToUFix64(priceFP128: UInt128): UFix64 {
+    access(all) view fun fp128ToUFix64(priceFP128: UInt128): UFix64 {
         // Divide by FP128_SCALE and convert to UFix64
         let scaled = priceFP128 / (self.FP128_SCALE / 100000000)
         return UFix64(scaled) / 100000000.0

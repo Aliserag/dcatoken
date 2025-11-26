@@ -90,9 +90,9 @@ transaction(
         log("  flow transactions send cadence/transactions/schedule_dca_plan.cdc \\")
         log("    ".concat(planId.toString()).concat(" ").concat(firstExecutionDelay.toString()).concat(" 128 1000 \\"))
         log("    --network emulator --signer emulator-account")
-    }
 
-    post {
-        self.controllerRef.getPlanIds().length > 0: "Plan was not added to controller"
+        // Verify plan was added (using execute block to avoid view context issues)
+        let planCount = self.controllerRef.getPlanIds().length
+        assert(planCount > 0, message: "Plan was not added to controller")
     }
 }
