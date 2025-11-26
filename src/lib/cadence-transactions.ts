@@ -198,3 +198,139 @@ access(all) fun main(address: Address, planId: UInt64): DCAPlan.PlanDetails? {
     return controllerRef!.getPlan(planId: planId)
 }
 `;
+
+/**
+ * Get all tokens that can be swapped with FLOW on IncrementFi
+ *
+ * @returns Array of token information including symbol, address, and liquidity
+ */
+export const GET_FLOW_SWAPPABLE_TOKENS_SCRIPT = `
+import "SwapFactory"
+import "SwapInterfaces"
+
+access(all) struct TokenInfo {
+    access(all) let symbol: String
+    access(all) let tokenAddress: String
+    access(all) let tokenContract: String
+    access(all) let tokenIdentifier: String
+    access(all) let pairAddress: Address
+    access(all) let flowReserve: String
+    access(all) let tokenReserve: String
+    access(all) let isStable: Bool
+
+    init(
+        symbol: String,
+        tokenAddress: String,
+        tokenContract: String,
+        tokenIdentifier: String,
+        pairAddress: Address,
+        flowReserve: String,
+        tokenReserve: String,
+        isStable: Bool
+    ) {
+        self.symbol = symbol
+        self.tokenAddress = tokenAddress
+        self.tokenContract = tokenContract
+        self.tokenIdentifier = tokenIdentifier
+        self.pairAddress = pairAddress
+        self.flowReserve = flowReserve
+        self.tokenReserve = tokenReserve
+        self.isStable = isStable
+    }
+}
+
+access(all) fun main(): [TokenInfo] {
+    let flowTokenIdentifier = "A.0ae53cb6e3f42a79.FlowToken.Vault"
+    let tokenInfos: [TokenInfo] = []
+
+    let allPairInfos = SwapFactory.getAllPairsInfo()
+
+    for pairInfo in allPairInfos {
+        let token0 = pairInfo.token0Key.identity
+        let token1 = pairInfo.token1Key.identity
+
+        var targetToken: String? = nil
+        var isToken0Flow = false
+
+        if token0 == flowTokenIdentifier {
+            targetToken = token1
+            isToken0Flow = true
+        } else if token1 == flowTokenIdentifier {
+            targetToken = token0
+            isToken0Flow = false
+        }
+
+        if targetToken != nil {
+            let parts = splitString(targetToken!, separator: ".")
+            let tokenAddress = parts.length > 1 ? parts[1] : ""
+            let tokenContract = parts.length > 2 ? parts[2] : ""
+            let symbol = getTokenSymbol(tokenContract)
+
+            let reserve0Str = pairInfo.token0Amount.toString()
+            let reserve1Str = pairInfo.token1Amount.toString()
+
+            let flowReserve = isToken0Flow ? reserve0Str : reserve1Str
+            let tokenReserve = isToken0Flow ? reserve1Str : reserve0Str
+
+            tokenInfos.append(TokenInfo(
+                symbol: symbol,
+                tokenAddress: tokenAddress,
+                tokenContract: tokenContract,
+                tokenIdentifier: targetToken!,
+                pairAddress: pairInfo.pairAddr,
+                flowReserve: flowReserve,
+                tokenReserve: tokenReserve,
+                isStable: pairInfo.isStableSwap
+            ))
+        }
+    }
+
+    return tokenInfos
+}
+
+access(all) fun splitString(_ str: String, separator: String): [String] {
+    let parts: [String] = []
+    var current = ""
+    var i = 0
+
+    while i < str.length {
+        let char = str.slice(from: i, upTo: i + 1)
+        if char == separator {
+            if current.length > 0 {
+                parts.append(current)
+            }
+            current = ""
+        } else {
+            current = current.concat(char)
+        }
+        i = i + 1
+    }
+
+    if current.length > 0 {
+        parts.append(current)
+    }
+
+    return parts
+}
+
+access(all) fun getTokenSymbol(_ contract: String): String {
+    switch contract {
+        case "FlowToken":
+            return "FLOW"
+        case "FiatToken":
+            return "USDC"
+        case "TeleportedTetherToken":
+            return "USDT"
+        case "stFlowToken":
+            return "stFLOW"
+        case "BeaverToken":
+            return "BEAVER"
+        case "DucToken":
+            return "DUC"
+        case "CowToken":
+            return "COW"
+        default:
+            return contract.slice(from: 0, upTo: 4 < contract.length ? 4 : contract.length).toUpper()
+    }
+}
+`;
