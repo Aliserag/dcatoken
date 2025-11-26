@@ -1,11 +1,9 @@
 "use client";
 
-import { useFlow } from "@onflow/react-sdk";
 import { useEffect, useState } from "react";
 import * as fcl from "@onflow/fcl";
 
 export function DCAHeader() {
-  const { user } = useFlow();
   const [userAddress, setUserAddress] = useState<string | null>(null);
   const [balance, setBalance] = useState<string>("0.00");
   const [isLoading, setIsLoading] = useState(false);

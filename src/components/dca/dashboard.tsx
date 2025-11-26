@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useFlow } from "@onflow/react-sdk";
 import * as fcl from "@onflow/fcl";
 import { GET_ALL_PLANS_SCRIPT } from "@/lib/cadence-transactions";
 
@@ -38,18 +37,25 @@ interface CadencePlanDetails {
 }
 
 export function DCADashboard() {
-  const { user } = useFlow();
+  const [userAddress, setUserAddress] = useState<string | null>(null);
   const [plans, setPlans] = useState<DCAPlan[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Subscribe to user authentication
   useEffect(() => {
-    if (user?.addr) {
-      fetchPlans(user.addr);
-    } else {
-      setPlans([]);
-    }
-  }, [user?.addr]);
+    const unsubscribe = fcl.currentUser.subscribe((currentUser) => {
+      if (currentUser && currentUser.addr) {
+        setUserAddress(currentUser.addr);
+        fetchPlans(currentUser.addr);
+      } else {
+        setUserAddress(null);
+        setPlans([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const fetchPlans = async (address: string) => {
     setLoading(true);
