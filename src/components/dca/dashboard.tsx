@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useFlow } from "@onflow/react-sdk";
+import * as fcl from "@onflow/fcl";
+import { GET_ALL_PLANS_SCRIPT } from "@/lib/cadence-transactions";
 
-interface DCA Plan {
+interface DCAPlan {
   id: number;
   amount: string;
   frequency: string;
@@ -16,36 +19,114 @@ interface DCA Plan {
   createdAt: string;
 }
 
+// Cadence plan structure from blockchain
+interface CadencePlanDetails {
+  planId: string;
+  sourceTokenType: string;
+  targetTokenType: string;
+  amountPerInterval: string;
+  intervalSeconds: string;
+  maxSlippageBps: string;
+  maxExecutions: string | null;
+  executionCount: string;
+  totalSourceInvested: string;
+  totalTargetAcquired: string;
+  weightedAveragePriceFP128: string;
+  status: number;
+  nextExecutionTime: string;
+  createdAt: string;
+}
+
 export function DCADashboard() {
-  // Mock data - will be replaced with actual blockchain data
-  const [plans] = useState<DCA Plan[]>([
-    {
-      id: 1,
-      amount: "10.00",
-      frequency: "Weekly",
-      totalInvested: "40.00",
-      totalAcquired: "125.50",
-      avgPrice: "3.14",
-      executionCount: 4,
-      maxExecutions: 12,
-      status: "active",
-      nextExecution: "2024-12-03",
-      createdAt: "2024-11-01",
-    },
-    {
-      id: 2,
-      amount: "5.00",
-      frequency: "Daily",
-      totalInvested: "155.00",
-      totalAcquired: "478.23",
-      avgPrice: "3.08",
-      executionCount: 31,
-      maxExecutions: null,
-      status: "active",
-      nextExecution: "2024-11-27",
-      createdAt: "2024-10-27",
-    },
-  ]);
+  const { user } = useFlow();
+  const [plans, setPlans] = useState<DCAPlan[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user?.addr) {
+      fetchPlans(user.addr);
+    } else {
+      setPlans([]);
+    }
+  }, [user?.addr]);
+
+  const fetchPlans = async (address: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const cadencePlans: CadencePlanDetails[] = await fcl.query({
+        cadence: GET_ALL_PLANS_SCRIPT,
+        args: (arg, t) => [arg(address, t.Address)],
+      });
+
+      console.log("Fetched plans from blockchain:", cadencePlans);
+
+      // Transform Cadence plan data to UI format
+      const transformedPlans: DCAPlan[] = cadencePlans.map((cp) => {
+        // Convert interval seconds to frequency label
+        const intervalDays = Math.floor(
+          parseInt(cp.intervalSeconds) / 86400
+        );
+        let frequency = "Custom";
+        if (intervalDays === 1) frequency = "Daily";
+        else if (intervalDays === 7) frequency = "Weekly";
+        else if (intervalDays === 14) frequency = "Bi-weekly";
+        else if (intervalDays === 30) frequency = "Monthly";
+
+        // Convert status number to label
+        let status: "active" | "paused" | "completed" = "active";
+        if (cp.status === 1) status = "paused";
+        else if (cp.status === 2) status = "completed";
+
+        // Parse amounts (they come as strings with decimals)
+        const totalInvested = parseFloat(cp.totalSourceInvested).toFixed(2);
+        const totalAcquired = parseFloat(cp.totalTargetAcquired).toFixed(2);
+
+        // Calculate average price from weighted average (simplified for now)
+        let avgPrice = "0.00";
+        if (parseFloat(totalAcquired) > 0) {
+          avgPrice = (
+            parseFloat(totalInvested) / parseFloat(totalAcquired)
+          ).toFixed(2);
+        }
+
+        // Format next execution time
+        const nextExecutionTime = new Date(
+          parseFloat(cp.nextExecutionTime) * 1000
+        );
+        const nextExecution = nextExecutionTime.toISOString().split("T")[0];
+
+        // Format created at time
+        const createdAtTime = new Date(parseFloat(cp.createdAt) * 1000);
+        const createdAt = createdAtTime.toISOString().split("T")[0];
+
+        return {
+          id: parseInt(cp.planId),
+          amount: parseFloat(cp.amountPerInterval).toFixed(2),
+          frequency,
+          totalInvested,
+          totalAcquired,
+          avgPrice,
+          executionCount: parseInt(cp.executionCount),
+          maxExecutions: cp.maxExecutions
+            ? parseInt(cp.maxExecutions)
+            : null,
+          status,
+          nextExecution,
+          createdAt,
+        };
+      });
+
+      setPlans(transformedPlans);
+    } catch (err: any) {
+      console.error("Error fetching plans:", err);
+      setError(err.message || "Failed to fetch plans");
+      setPlans([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -110,7 +191,59 @@ export function DCADashboard() {
       <div className="space-y-4">
         <h2 className="text-2xl font-bold">Your DCA Plans</h2>
 
-        {plans.length === 0 ? (
+        {/* Loading State */}
+        {loading && (
+          <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-12 text-center">
+            <svg
+              className="animate-spin h-12 w-12 mx-auto mb-4 text-[#00EF8B]"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            <p className="text-gray-600 dark:text-gray-400">
+              Loading your DCA plans...
+            </p>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-xl p-6 text-center">
+            <svg
+              className="w-12 h-12 mx-auto mb-4 text-red-600"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">
+              Error Loading Plans
+            </h3>
+            <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loading && !error && plans.length === 0 && (
           <div className="bg-white dark:bg-[#1a1a1a] border-2 border-dashed border-gray-300 dark:border-[#2a2a2a] rounded-xl p-12 text-center">
             <svg
               className="w-16 h-16 mx-auto mb-4 text-gray-400"
@@ -131,7 +264,10 @@ export function DCADashboard() {
               investments
             </p>
           </div>
-        ) : (
+        )}
+
+        {/* Plans List */}
+        {!loading && !error && plans.length > 0 && (
           <div className="space-y-4">
             {plans.map((plan) => {
               const progress = getProgressPercentage(plan);
