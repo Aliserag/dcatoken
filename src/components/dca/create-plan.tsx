@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useFlow } from "@onflow/react-sdk";
 import * as fcl from "@onflow/fcl";
 import { useTransaction } from "@/hooks/use-transaction";
 import {
@@ -12,7 +11,7 @@ import {
 import { TransactionStatus } from "@/config/fcl-config";
 
 export function CreateDCAPlan() {
-  const { user } = useFlow();
+  const [userAddress, setUserAddress] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [interval, setInterval] = useState("7");
   const [slippage, setSlippage] = useState("1");
@@ -30,12 +29,20 @@ export function CreateDCAPlan() {
     isSuccess: txSuccess,
   } = useTransaction();
 
-  // Check if controller is configured when user connects
+  // Subscribe to user authentication
   useEffect(() => {
-    if (user?.addr) {
-      checkController(user.addr);
-    }
-  }, [user?.addr]);
+    const unsubscribe = fcl.currentUser.subscribe((currentUser) => {
+      if (currentUser && currentUser.addr) {
+        setUserAddress(currentUser.addr);
+        checkController(currentUser.addr);
+      } else {
+        setUserAddress(null);
+        setControllerConfigured(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const checkController = async (address: string) => {
     setCheckingController(true);
@@ -54,7 +61,7 @@ export function CreateDCAPlan() {
   };
 
   const setupController = async () => {
-    if (!user?.addr) {
+    if (!userAddress) {
       alert("Please connect your wallet first");
       return;
     }
@@ -74,7 +81,7 @@ export function CreateDCAPlan() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!user?.addr) {
+    if (!userAddress) {
       alert("Please connect your wallet first");
       return;
     }
@@ -281,7 +288,7 @@ export function CreateDCAPlan() {
         )}
 
         {/* Controller Setup Notice */}
-        {user?.addr && !controllerConfigured && !checkingController && (
+        {userAddress && !controllerConfigured && !checkingController && (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
             <div className="flex items-start gap-3">
               <svg
@@ -412,13 +419,13 @@ export function CreateDCAPlan() {
           disabled={
             txLoading ||
             !amount ||
-            !user?.addr ||
+            !userAddress ||
             !controllerConfigured ||
             checkingController
           }
           className="w-full bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-black dark:disabled:text-gray-400 font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-[#00EF8B]/30 disabled:shadow-none disabled:transform-none"
         >
-          {!user?.addr
+          {!userAddress
             ? "Connect Wallet to Continue"
             : checkingController
             ? "Checking setup..."
