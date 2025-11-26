@@ -13,7 +13,12 @@ import "FlowToken"
 /// - One controller per user, stored at /storage/DCAController
 /// - Controller holds references (not vaults) to user's tokens
 /// - Scheduled handlers borrow capabilities from the controller
+/// - Owner entitlement grants privileged access to handler
 access(all) contract DCAController {
+
+    /// Owner entitlement for privileged controller access
+    /// This is required by DCATransactionHandler to update plans
+    access(all) entitlement Owner
 
     /// Storage paths
     access(all) let ControllerStoragePath: StoragePath
@@ -131,10 +136,11 @@ access(all) contract DCAController {
         /// Borrow a reference to a plan (mutable)
         ///
         /// Used by scheduled handlers to update plan state during execution.
+        /// Requires Owner entitlement for privileged access.
         ///
         /// @param id: Plan ID
         /// @return Mutable reference to the plan
-        access(all) fun borrowPlan(id: UInt64): &DCAPlan.Plan? {
+        access(Owner) fun borrowPlan(id: UInt64): &DCAPlan.Plan? {
             return &self.plans[id]
         }
 
