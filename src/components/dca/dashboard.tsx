@@ -316,7 +316,7 @@ export function DCADashboard() {
                       >
                         {plan.status.toUpperCase()}
                       </span>
-                      <button className="px-4 py-2 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#3a3a3a] rounded-lg text-sm font-medium transition-colors">
+                      <button className="px-4 py-2 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#3a3a3a] rounded-lg text-sm font-medium transition-colors cursor-pointer">
                         Manage
                       </button>
                     </div>

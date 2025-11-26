@@ -7,17 +7,31 @@ import {
   SETUP_CONTROLLER_TX,
   CREATE_PLAN_TX,
   CHECK_CONTROLLER_SCRIPT,
+  GET_FLOW_SWAPPABLE_TOKENS_SCRIPT,
 } from "@/lib/cadence-transactions";
 import { TransactionStatus } from "@/config/fcl-config";
+import type { TokenInfo } from "@/lib/token-metadata";
+import {
+  sortTokensByLiquidity,
+  filterByMinLiquidity,
+  getTokenDisplayName,
+  getTokenColor,
+} from "@/lib/token-metadata";
 
 export function CreateDCAPlan() {
   const [userAddress, setUserAddress] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
-  const [interval, setInterval] = useState("7");
+  const [interval, setInterval] = useState("168"); // Default to Weekly
   const [slippage, setSlippage] = useState("1");
   const [maxExecutions, setMaxExecutions] = useState("");
   const [controllerConfigured, setControllerConfigured] = useState(false);
   const [checkingController, setCheckingController] = useState(false);
+
+  // Token selection state
+  const [availableTokens, setAvailableTokens] = useState<TokenInfo[]>([]);
+  const [selectedToken, setSelectedToken] = useState<TokenInfo | null>(null);
+  const [loadingTokens, setLoadingTokens] = useState(false);
+  const [tokensError, setTokensError] = useState<string | null>(null);
 
   const {
     status: txStatus,
@@ -43,6 +57,44 @@ export function CreateDCAPlan() {
 
     return () => unsubscribe();
   }, []);
+
+  // Fetch available tokens from IncrementFi
+  useEffect(() => {
+    fetchAvailableTokens();
+  }, []);
+
+  const fetchAvailableTokens = async () => {
+    setLoadingTokens(true);
+    setTokensError(null);
+    try {
+      const tokens: TokenInfo[] = await fcl.query({
+        cadence: GET_FLOW_SWAPPABLE_TOKENS_SCRIPT,
+        args: (arg, t) => [],
+      });
+
+      console.log("Fetched tokens from IncrementFi:", tokens);
+
+      // Filter tokens with at least 100 FLOW liquidity and sort by liquidity
+      const filteredTokens = filterByMinLiquidity(tokens, 100);
+      const sortedTokens = sortTokensByLiquidity(filteredTokens);
+
+      setAvailableTokens(sortedTokens);
+
+      // Auto-select first token if available
+      if (sortedTokens.length > 0) {
+        setSelectedToken(sortedTokens[0]);
+      }
+    } catch (error: any) {
+      console.error("Error fetching tokens:", error);
+      setTokensError(
+        "Failed to load available tokens. Using default token list."
+      );
+      // Fallback to empty array on error
+      setAvailableTokens([]);
+    } finally {
+      setLoadingTokens(false);
+    }
+  };
 
   const checkController = async (address: string) => {
     setCheckingController(true);
@@ -120,10 +172,14 @@ export function CreateDCAPlan() {
   };
 
   const intervalOptions = [
-    { value: "1", label: "Daily", seconds: 86400 },
-    { value: "7", label: "Weekly", seconds: 604800 },
-    { value: "14", label: "Bi-weekly", seconds: 1209600 },
-    { value: "30", label: "Monthly", seconds: 2592000 },
+    { value: "0.0166", label: "Minutely", seconds: 60 },
+    { value: "1", label: "Hourly", seconds: 3600 },
+    { value: "4", label: "Every 4 Hours", seconds: 14400 },
+    { value: "12", label: "Every 12 Hours", seconds: 43200 },
+    { value: "24", label: "Daily", seconds: 86400 },
+    { value: "168", label: "Weekly", seconds: 604800 },
+    { value: "336", label: "Bi-weekly", seconds: 1209600 },
+    { value: "720", label: "Monthly", seconds: 2592000 },
   ];
 
   const estimatedDuration = maxExecutions
@@ -145,6 +201,77 @@ export function CreateDCAPlan() {
           </p>
         </div>
 
+        {/* Target Token Selection */}
+        <div className="space-y-2">
+          <label
+            htmlFor="targetToken"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+          >
+            Target Asset
+          </label>
+
+          {loadingTokens ? (
+            <div className="w-full px-4 py-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl flex items-center gap-2">
+              <svg
+                className="animate-spin h-5 w-5 text-[#00EF8B]"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              <span className="text-sm text-gray-500">
+                Loading available tokens...
+              </span>
+            </div>
+          ) : tokensError ? (
+            <div className="w-full px-4 py-3 bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-800 rounded-xl">
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                {tokensError}
+              </p>
+            </div>
+          ) : availableTokens.length === 0 ? (
+            <div className="w-full px-4 py-3 bg-gray-50 dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl">
+              <p className="text-sm text-gray-500">
+                No tokens available. Please check your network connection.
+              </p>
+            </div>
+          ) : (
+            <select
+              id="targetToken"
+              value={selectedToken?.tokenIdentifier || ""}
+              onChange={(e) => {
+                const token = availableTokens.find(
+                  (t) => t.tokenIdentifier === e.target.value
+                );
+                setSelectedToken(token || null);
+              }}
+              className="w-full px-4 py-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl focus:border-[#00EF8B] focus:ring-2 focus:ring-[#00EF8B]/20 outline-none cursor-pointer"
+            >
+              {availableTokens.map((token) => (
+                <option key={token.tokenIdentifier} value={token.tokenIdentifier}>
+                  {getTokenDisplayName(token)}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <p className="text-xs text-gray-500">
+            DCA from FLOW into your chosen token via IncrementFi
+          </p>
+        </div>
+
         {/* Amount Input */}
         <div className="space-y-2">
           <label
@@ -163,7 +290,7 @@ export function CreateDCAPlan() {
               onChange={(e) => setAmount(e.target.value)}
               placeholder="e.g., 10.00"
               required
-              className="w-full px-4 py-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl focus:border-[#00EF8B] focus:ring-2 focus:ring-[#00EF8B]/20 outline-none text-lg font-mono"
+              className="w-full px-4 py-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl focus:border-[#00EF8B] focus:ring-2 focus:ring-[#00EF8B]/20 outline-none text-lg font-mono cursor-text"
             />
             <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">
               FLOW
@@ -185,7 +312,7 @@ export function CreateDCAPlan() {
                 key={option.value}
                 type="button"
                 onClick={() => setInterval(option.value)}
-                className={`px-4 py-3 rounded-xl font-medium transition-all ${
+                className={`px-4 py-3 rounded-xl font-medium transition-all cursor-pointer ${
                   interval === option.value
                     ? "bg-[#00EF8B] text-black shadow-lg shadow-[#00EF8B]/30"
                     : "bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] hover:border-[#00EF8B] text-gray-700 dark:text-gray-300"
@@ -195,6 +322,9 @@ export function CreateDCAPlan() {
               </button>
             ))}
           </div>
+          <p className="text-xs text-gray-500">
+            More frequent = higher fees but faster accumulation
+          </p>
         </div>
 
         {/* Max Executions */}
@@ -212,7 +342,7 @@ export function CreateDCAPlan() {
             value={maxExecutions}
             onChange={(e) => setMaxExecutions(e.target.value)}
             placeholder="Leave empty for unlimited"
-            className="w-full px-4 py-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl focus:border-[#00EF8B] focus:ring-2 focus:ring-[#00EF8B]/20 outline-none"
+            className="w-full px-4 py-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl focus:border-[#00EF8B] focus:ring-2 focus:ring-[#00EF8B]/20 outline-none cursor-text"
           />
           <p className="text-xs text-gray-500">
             Your plan will run {estimatedDuration}
@@ -315,7 +445,7 @@ export function CreateDCAPlan() {
                 <button
                   onClick={setupController}
                   disabled={txLoading}
-                  className="bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 text-white font-medium px-4 py-2 rounded-lg transition-colors"
+                  className="bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 text-white font-medium px-4 py-2 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
                 >
                   {txLoading ? "Setting up..." : "Setup Controller Now"}
                 </button>
@@ -423,7 +553,7 @@ export function CreateDCAPlan() {
             !controllerConfigured ||
             checkingController
           }
-          className="w-full bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-black dark:disabled:text-gray-400 font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-[#00EF8B]/30 disabled:shadow-none disabled:transform-none"
+          className="w-full bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-black dark:disabled:text-gray-400 font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-[#00EF8B]/30 disabled:shadow-none disabled:transform-none cursor-pointer"
         >
           {!userAddress
             ? "Connect Wallet to Continue"

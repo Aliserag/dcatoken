@@ -116,7 +116,7 @@ export function DCAHeader() {
                 </div>
                 <button
                   onClick={disconnectWallet}
-                  className="px-4 py-2 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#3a3a3a] rounded-xl text-sm font-medium transition-colors"
+                  className="px-4 py-2 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#3a3a3a] rounded-xl text-sm font-medium transition-colors cursor-pointer"
                 >
                   Disconnect
                 </button>
@@ -125,7 +125,7 @@ export function DCAHeader() {
               <button
                 onClick={connectWallet}
                 disabled={isLoading}
-                className="bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-400 disabled:cursor-not-allowed text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-[#00EF8B]/30 disabled:shadow-none disabled:transform-none"
+                className="bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-400 disabled:cursor-not-allowed text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-[#00EF8B]/30 disabled:shadow-none disabled:transform-none cursor-pointer"
               >
                 {isLoading ? "Connecting..." : "Connect Wallet"}
               </button>
