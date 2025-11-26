@@ -1,736 +1,260 @@
-# DCA Token - Dollar Cost Averaging on Flow
+# Flow React SDK Starter
 
-> Automated, on-chain DCA investing using Forte Scheduled Transactions and Flow Actions
+A minimal Next.js starter template for building Flow blockchain applications using `@onflow/react-sdk`. This starter includes interactive tutorials and examples to help you get started quickly.
 
-## 📖 Project Overview
+## Features
 
-**DCA Token** is an educational, production-quality dapp showcasing Flow's Forte features:
+- **Next.js** with App Router and Turbopack
+- **Flow React SDK** `@onflow/react-sdk` pre-configured
+- **FlowProvider** wrapper with Testnet configuration
+- **Interactive tutorials** with working examples:
+  - Wallet connection with official Connect component
+  - Testnet faucet integration
+  - Balance checking with `useFlowQuery`
+  - Token transfers with `useFlowMutate`
+- **Network indicator** showing current Flow network (Testnet/Mainnet/Emulator)
+- **Responsive design** optimized for mobile, tablet, and desktop
 
-- **Cadence 1.0 Only** - Modern, safe smart contract patterns
-- **Forte Scheduled Transactions** - Autonomous, recurring on-chain execution
-- **Flow Actions (DeFi Actions)** - Composable DeFi primitives for swaps
-- **IncrementFi Integration** - DEX swaps via official Flow Actions connectors
-- **128-bit Fixed-Point Math** - High-precision DeFi calculations for slippage and average price tracking
+## Getting Started
 
-### Default DCA Pair
-
-This demo implements:
-- **Source Asset**: FLOW (`A.1654653399040a61.FlowToken`)
-- **Target Asset**: Beaver (`A.687e1a7aef17b78b.Beaver`)
-- **DEX**: IncrementFi (via Flow Actions swap connectors)
-
-The architecture is fully configurable to support other token pairs.
-
----
-
-## 🏗 Architecture
-
-### Contract Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    User's Account                    │
-├─────────────────────────────────────────────────────┤
-│  DCAController                                       │
-│  ├── DCAPlan #1 (Active)                            │
-│  ├── DCAPlan #2 (Paused)                            │
-│  └── Vault Capabilities                              │
-│      ├── Source (FLOW) - Withdraw                   │
-│      └── Target (Beaver) - Deposit                  │
-└─────────────────────────────────────────────────────┘
-                         │
-                         │ Scheduled Execution
-                         ↓
-┌─────────────────────────────────────────────────────┐
-│              ScheduledHandler.cdc                    │
-│  executeDCA(ownerAddress, planId)                   │
-│  ├── Validate plan ready                            │
-│  ├── Build Flow Actions stack:                      │
-│  │   Source (FLOW) → Swapper → Sink (Beaver)       │
-│  ├── Execute swap via IncrementFi                   │
-│  ├── Update plan accounting                         │
-│  └── Schedule next execution                        │
-└─────────────────────────────────────────────────────┘
-                         │
-                         │ Uses
-                         ↓
-┌─────────────────────────────────────────────────────┐
-│              DeFiMath.cdc                            │
-│  ├── calculateMinOutWithSlippage()                  │
-│  ├── updateWeightedAveragePriceFP128()              │
-│  └── FP128 utilities                                │
-└─────────────────────────────────────────────────────┘
-```
-
-### Key Concepts
-
-#### 1. **DCA Plans** (`DCAPlan.cdc`)
-
-Each plan is a resource that represents a recurring investment strategy:
-- Amount per interval (e.g., 10 FLOW)
-- Interval (e.g., 7 days)
-- Slippage tolerance (e.g., 1%)
-- Optional max executions
-- Tracks: total invested, total acquired, weighted average price
-
-#### 2. **DCA Controller** (`DCAController.cdc`)
-
-One per user, stored in their account:
-- Holds all user's DCA plans
-- Manages vault capabilities (withdraw from source, deposit to target)
-- Provides public interface for querying plans
-
-#### 3. **Scheduled Handler** (`ScheduledHandler.cdc`)
-
-The autonomous executor:
-- Called by Flow's Scheduled Transaction system at interval
-- Validates plan readiness
-- Executes swap via Flow Actions + IncrementFi
-- Updates plan state
-- Reschedules next execution
-
-#### 4. **DeFi Math** (`DeFiMath.cdc`)
-
-High-precision financial calculations:
-- **Slippage protection**: Calculate minimum acceptable output
-- **Weighted average price**: Track DCA performance using FP128
-- **Basis points**: 100 bps = 1%, 10000 bps = 100%
-
-#### 5. **IncrementFi Integration** (`IncrementRoutes.cdc`)
-
-Helper for IncrementFi Flow Actions connectors:
-- Swap routes (FLOW → Beaver)
-- Pool validation
-- Connector addresses for testnet/mainnet
-
----
-
-## 📦 Project Structure
-
-```
-dcatoken/
-├── cadence/
-│   ├── contracts/
-│   │   ├── DCAController.cdc       # User's DCA management resource
-│   │   ├── DCAPlan.cdc             # DCA plan resource definition
-│   │   ├── DeFiMath.cdc            # Fixed-point math utilities
-│   │   ├── ScheduledHandler.cdc    # Scheduled execution handler
-│   │   └── IncrementRoutes.cdc     # IncrementFi connector helpers
-│   ├── transactions/
-│   │   ├── setup_controller.cdc    # Initialize controller
-│   │   ├── create_plan.cdc         # Create new DCA plan
-│   │   ├── pause_plan.cdc          # Pause active plan
-│   │   ├── resume_plan.cdc         # Resume paused plan
-│   │   └── execute_plan_manual.cdc # Manual execution (testing)
-│   └── scripts/
-│       ├── get_all_plans.cdc       # Query all plans
-│       ├── get_plan_details.cdc    # Query specific plan
-│       ├── get_active_plans.cdc    # Query active plans only
-│       └── check_controller_configured.cdc
-├── apps/
-│   └── web/                        # Next.js frontend
-│       ├── src/
-│       │   ├── app/                # App Router pages
-│       │   ├── components/         # React components
-│       │   └── lib/
-│       │       └── flow-config.ts  # FCL configuration
-│       ├── package.json
-│       └── tailwind.config.js
-├── flow.json                       # Flow project configuration
-├── CLAUDE.md                       # Project guidelines
-└── README.md                       # This file
-```
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Flow CLI** (v1.0+): [Install Flow CLI](https://developers.flow.com/tools/flow-cli/install)
-- **Node.js** (v18+): For frontend
-- **Git**: For cloning the repo
-
-### 1. Clone the Repository
+### Installation
 
 ```bash
-git clone https://github.com/yourusername/dcatoken.git
-cd dcatoken
-```
-
-### 2. Install Frontend Dependencies
-
-```bash
-cd apps/web
 npm install
-cd ../..
+# or
+yarn install
+# or
+pnpm install
 ```
 
----
-
-## 🧪 Running Locally (Emulator)
-
-### Step 1: Start the Flow Emulator
-
-In one terminal, start the Flow emulator:
+### Development
 
 ```bash
-flow emulator start
-```
-
-Keep this running. You should see:
-```
-INFO[0000] ⚙️   Using in-memory storage
-INFO[0000] 📦  Starting HTTP server on port 8888
-```
-
-### Step 2: Deploy Contracts
-
-In another terminal, deploy contracts to the emulator:
-
-```bash
-flow project deploy --network emulator
-```
-
-Expected output:
-```
-Deploying 5 contracts for accounts: emulator-account
-
-DeFiMath -> 0xf8d6e0586b0a20c7
-DCAPlan -> 0xf8d6e0586b0a20c7
-DCAController -> 0xf8d6e0586b0a20c7
-IncrementRoutes -> 0xf8d6e0586b0a20c7
-ScheduledHandler -> 0xf8d6e0586b0a20c7
-
-✅ All contracts deployed successfully
-```
-
-### Step 3: Initialize Your Controller
-
-Run the setup transaction to create your DCA controller:
-
-```bash
-flow transactions send cadence/transactions/setup_controller.cdc \
-  --network emulator \
-  --signer emulator-account
-```
-
-Expected output:
-```
-Transaction ID: abc123...
-Status: ✅ SEALED
-Events:
-  - DCAController.ControllerCreated
-```
-
-### Step 4: Create a DCA Plan
-
-Create your first DCA plan:
-
-```bash
-flow transactions send cadence/transactions/create_plan.cdc \
-  10.0 \
-  7 \
-  100 \
-  nil \
-  300 \
-  --network emulator \
-  --signer emulator-account
-```
-
-**Parameters:**
-- `10.0` - Amount per interval (10 FLOW)
-- `7` - Interval in days (weekly)
-- `100` - Max slippage in bps (1%)
-- `nil` - Max executions (unlimited)
-- `300` - First execution delay in seconds (5 minutes)
-
-Expected output:
-```
-Transaction ID: def456...
-Status: ✅ SEALED
-Events:
-  - DCAPlan.PlanCreated
-    planId: 1
-    amountPerInterval: 10.0
-```
-
-### Step 5: Query Your Plans
-
-Check your plans:
-
-```bash
-flow scripts execute cadence/scripts/get_all_plans.cdc 0xf8d6e0586b0a20c7 \
-  --network emulator
-```
-
-Expected output:
-```json
-[
-  {
-    "id": 1,
-    "sourceTokenType": "A.0ae53cb6e3f42a79.FlowToken.Vault",
-    "targetTokenType": "A.0ae53cb6e3f42a79.FlowToken.Vault",
-    "amountPerInterval": "10.00000000",
-    "intervalSeconds": 604800,
-    "maxSlippageBps": 100,
-    "status": 0,
-    "executionCount": 0,
-    "totalSourceInvested": "0.00000000",
-    "totalTargetAcquired": "0.00000000",
-    "nextExecutionTime": "1234567890.00000000"
-  }
-]
-```
-
-### Step 6: Manually Execute Plan (Testing)
-
-For testing, manually trigger execution:
-
-```bash
-flow transactions send cadence/transactions/execute_plan_manual.cdc \
-  0xf8d6e0586b0a20c7 \
-  1 \
-  --network emulator \
-  --signer emulator-account
-```
-
-Expected output:
-```
-Transaction ID: ghi789...
-Status: ✅ SEALED
-Events:
-  - ScheduledHandler.HandlerExecutionStarted
-  - DCAPlan.PlanExecuted
-    amountIn: 10.0
-    amountOut: 25.123
-    newAvgPriceFP128: ...
-  - ScheduledHandler.NextExecutionScheduled
-```
-
-### Step 7: View Updated Plan
-
-Query plan details after execution:
-
-```bash
-flow scripts execute cadence/scripts/get_plan_details.cdc \
-  0xf8d6e0586b0a20c7 \
-  1 \
-  --network emulator
-```
-
-You should see:
-- `executionCount: 1`
-- `totalSourceInvested: 10.0`
-- `totalTargetAcquired: 25.123` (example)
-- Updated `avgExecutionPriceDisplay`
-
----
-
-## 🌐 Running the Frontend
-
-### Start Development Server
-
-```bash
-cd apps/web
 npm run dev
+# or
+yarn dev
+# or
+pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:3000](http://localhost:3000) with your browser.
 
-### Features
-
-- **Connect Wallet**: Uses FCL to connect to Flow wallet (emulator/testnet)
-- **Dashboard**: View all your DCA plans
-- **Create Plan**: Form to set up new DCA strategies
-- **Plan Details**: Monitor execution history, average price, performance
-
-### Configuration
-
-Create `.env.local`:
+### Build
 
 ```bash
-cp .env.example .env.local
-```
-
-For emulator (default):
-```
-NEXT_PUBLIC_FLOW_NETWORK=emulator
-```
-
-For testnet:
-```
-NEXT_PUBLIC_FLOW_NETWORK=testnet
-NEXT_PUBLIC_DCA_CONTROLLER_ADDRESS=0x...
-NEXT_PUBLIC_DCA_PLAN_ADDRESS=0x...
-# ... other addresses after deployment
-```
-
----
-
-## 🚢 Deploying to Testnet
-
-### Prerequisites
-
-1. **Testnet Account**: Create via [Flow Faucet](https://testnet-faucet.onflow.org/)
-2. **Fund Account**: Get FLOW tokens from faucet
-3. **Update flow.json**:
-
-```json
-{
-  "accounts": {
-    "testnet-account": {
-      "address": "0xYOUR_TESTNET_ADDRESS",
-      "key": "YOUR_PRIVATE_KEY"
-    }
-  }
-}
-```
-
-### Deploy Contracts
-
-```bash
-flow project deploy --network testnet
-```
-
-### Update Frontend Config
-
-In `apps/web/.env.local`:
-
-```bash
-NEXT_PUBLIC_FLOW_NETWORK=testnet
-NEXT_PUBLIC_DCA_CONTROLLER_ADDRESS=0x... # from deploy output
-NEXT_PUBLIC_DCA_PLAN_ADDRESS=0x...
-NEXT_PUBLIC_DEFI_MATH_ADDRESS=0x...
-NEXT_PUBLIC_SCHEDULED_HANDLER_ADDRESS=0x...
-NEXT_PUBLIC_INCREMENT_ROUTES_ADDRESS=0x...
-```
-
-### Note: Scheduled Transactions on Testnet
-
-Scheduled Transactions are available on Flow Testnet. However, integration with the `FlowTransactionScheduler` contract is still evolving. For production use:
-
-1. Register your handler with the scheduler contract
-2. Update `ScheduledHandler.cdc` to call `FlowTransactionScheduler.schedule()`
-3. Monitor scheduled executions via Flow block explorer
-
-For now, use manual execution for testing: `execute_plan_manual.cdc`.
-
----
-
-## 📊 DeFi Math & Fixed-Point Arithmetic
-
-### Why FP128?
-
-Dollar Cost Averaging requires precise price tracking:
-- **Problem**: UFix64 loses precision in repeated calculations
-- **Solution**: 128-bit fixed-point (FP128) stores prices as integers scaled by 2^64
-
-### Key Functions
-
-#### 1. Calculate Minimum Output with Slippage
-
-```cadence
-DeFiMath.calculateMinOutWithSlippage(
-  amountIn: 10.0,              // 10 FLOW
-  expectedPriceFP128: ...,     // Expected: 1 FLOW = 2.5 Beaver
-  slippageBps: 100             // 1% tolerance
-)
-// Returns: 24.75 Beaver minimum (2.5 * 10 * 0.99)
-```
-
-#### 2. Update Weighted Average Price
-
-```cadence
-DeFiMath.updateWeightedAveragePriceFP128(
-  previousAvgPriceFP128: oldAvg,
-  totalPreviousIn: 50.0,       // Previously invested 50 FLOW
-  newAmountIn: 10.0,           // This execution: 10 FLOW
-  newAmountOut: 25.0           // Received: 25 Beaver
-)
-// Returns: New weighted average in FP128
-```
-
-**Formula:**
-```
-newAvg = (prevAvg * totalPrevIn + executionPrice * newIn) / (totalPrevIn + newIn)
-```
-
-#### 3. Convert for Display
-
-```cadence
-DeFiMath.fp128ToUFix64(priceFP128: avgPrice)
-// Converts FP128 to human-readable UFix64 for UI display
-```
-
-### Basis Points Reference
-
-| bps | Percentage | Use Case |
-|-----|-----------|----------|
-| 10  | 0.1%      | Stablecoin swaps |
-| 50  | 0.5%      | Low volatility pairs |
-| 100 | 1%        | **Recommended for DCA** |
-| 300 | 3%        | High volatility pairs |
-| 500 | 5%        | Max recommended |
-
----
-
-## 🔄 Flow Actions Integration
-
-### What are Flow Actions?
-
-Flow Actions are composable DeFi primitives from the Flow Actions framework:
-- **Source**: Where tokens come from (e.g., withdraw from vault)
-- **Sink**: Where tokens go (e.g., deposit to vault)
-- **Swapper**: Token exchange (e.g., DEX swap)
-- **PriceOracle**: Price feeds
-- **Flasher**: Flash loans
-
-### DCA Flow Actions Stack
-
-```cadence
-Source(FLOW vault)
-  ↓ withdraw 10 FLOW
-Swapper(IncrementFi)
-  ↓ swap FLOW → Beaver
-Sink(Beaver vault)
-  ↓ deposit acquired Beaver
-```
-
-### IncrementFi Connectors
-
-This project uses IncrementFi's official Flow Actions connectors:
-- **SwapConnector**: Atomic swaps with slippage protection
-- **PoolSource**: Withdraw from liquidity pools
-- **PoolSink**: Deposit to liquidity pools
-- **PoolRewardsSource**: Claim LP rewards
-
-**Note**: The current implementation includes a swap simulator (`simulateSwap()`) in `ScheduledHandler.cdc`. To integrate real IncrementFi swaps:
-
-1. Import IncrementFi connector contracts (see testnet addresses in `IncrementRoutes.cdc`)
-2. Replace `simulateSwap()` with real swap connector calls
-3. Update `IncrementRoutes.cdc` with actual pool addresses
-
----
-
-## 🧪 Testing Guide
-
-### Test Scenarios
-
-#### 1. Basic Flow
-
-✅ Setup controller
-✅ Create plan
-✅ Execute once
-✅ Verify accounting
-
-```bash
-# Setup
-flow transactions send cadence/transactions/setup_controller.cdc --network emulator --signer emulator-account
-
-# Create plan
-flow transactions send cadence/transactions/create_plan.cdc 5.0 1 100 3 60 --network emulator --signer emulator-account
-
-# Execute
-flow transactions send cadence/transactions/execute_plan_manual.cdc 0xf8d6e0586b0a20c7 1 --network emulator --signer emulator-account
-
-# Query
-flow scripts execute cadence/scripts/get_plan_details.cdc 0xf8d6e0586b0a20c7 1 --network emulator
-```
-
-#### 2. Pause/Resume
-
-```bash
-# Pause
-flow transactions send cadence/transactions/pause_plan.cdc 1 --network emulator --signer emulator-account
-
-# Resume
-flow transactions send cadence/transactions/resume_plan.cdc 1 120 --network emulator --signer emulator-account
-```
-
-#### 3. Multiple Executions
-
-Create plan with max 3 executions, execute 3 times, verify status becomes `Completed`.
-
-#### 4. Insufficient Balance
-
-Create plan with large amount, execute without enough FLOW, verify graceful failure.
-
----
-
-## 📚 Contract Reference
-
-### DCAController.cdc
-
-- `createController()` - Factory function for new controller
-- `setSourceVaultCapability()` - Configure source token capability
-- `setTargetVaultCapability()` - Configure target token capability
-- `addPlan()` - Add plan to controller
-- `borrowPlan()` - Mutable reference to plan
-- `getAllPlans()` - Query all plans
-- `getActivePlans()` - Query active plans only
-
-### DCAPlan.cdc
-
-- `createPlan()` - Factory function for new plan
-- `recordExecution()` - Update accounting after swap
-- `scheduleNextExecution()` - Calculate next run time
-- `pause()` - Pause active plan
-- `resume()` - Resume paused plan
-- `getDetails()` - Return plan details struct
-
-### ScheduledHandler.cdc
-
-- `executeDCA()` - Main handler called by scheduler
-- `executeSwap()` - Build and run Flow Actions stack
-- `simulateSwap()` - Mock swap (TODO: replace with IncrementFi)
-
-### DeFiMath.cdc
-
-- `calculateMinOutWithSlippage()` - Slippage protection
-- `updateWeightedAveragePriceFP128()` - DCA price tracking
-- `calculatePriceFP128()` - Convert amounts to FP128 price
-- `fp128ToUFix64()` - Convert FP128 for display
-
----
-
-## 🛠 Common Commands
-
-### Emulator
-
-```bash
-# Start emulator
-flow emulator start
-
-# Deploy contracts
-flow project deploy --network emulator
-
-# Send transaction
-flow transactions send <path> <args> --network emulator --signer emulator-account
-
-# Execute script
-flow scripts execute <path> <args> --network emulator
-```
-
-### Testnet
-
-```bash
-# Deploy to testnet
-flow project deploy --network testnet
-
-# Send transaction
-flow transactions send <path> <args> --network testnet --signer testnet-account
-
-# Execute script
-flow scripts execute <path> <args> --network testnet
-```
-
-### Frontend
-
-```bash
-cd apps/web
-
-# Install dependencies
-npm install
-
-# Development server
-npm run dev
-
-# Production build
 npm run build
-npm run start
 ```
 
----
+## Project Structure
 
-## 🔐 Security Considerations
+```
+src/
+├── app/
+│   ├── layout.tsx                  # Root layout with FlowProvider
+│   ├── page.tsx                    # Main landing page (Server Component)
+│   └── globals.css                 # Global styles
+└── components/
+    ├── flow-provider-wrapper.tsx   # FlowProvider configuration
+    ├── flow-header.tsx             # Header with Connect component & network indicator
+    ├── flow-content.tsx            # Main content component (Client Component)
+    └── tutorial/
+        ├── wallet-connect.tsx      # Step 1: Wallet connection tutorial
+        ├── faucet-funding.tsx      # Step 2: Testnet faucet integration
+        ├── flow-balance.tsx        # Step 3: Balance query example (useFlowQuery)
+        └── send-flow.tsx           # Step 4: Token transfer example (useFlowMutate)
+```
 
-### Smart Contract Security
+## FlowProvider Configuration
 
-- ✅ **No resource leaks**: All resources properly handled
-- ✅ **Pre/post conditions**: Critical functions have assertions
-- ✅ **Capability-based access**: Uses Flow's capability security model
-- ✅ **Slippage protection**: Prevents unfavorable trades
-- ✅ **No hardcoded keys**: Never commit private keys to repo
+The `FlowProvider` is configured in `src/components/flow-provider-wrapper.tsx` with **Flow Testnet** by default.
 
-### User Security
+To switch networks, update the config:
 
-- 🔒 **Private keys**: Store securely, never commit `.env` files
-- 🔒 **Approve carefully**: Review transaction details before signing
-- 🔒 **Slippage tolerance**: Don't set > 5% in production
-- 🔒 **Test first**: Always test on emulator before mainnet
+**Mainnet:**
 
----
+```typescript
+accessNodeUrl: "https://rest-mainnet.onflow.org",
+discoveryWallet: "https://fcl-discovery.onflow.org/mainnet/authn",
+flowNetwork: "mainnet",
+```
 
-## 🌟 Next Steps
+**Emulator:**
 
-### For Learners
+```typescript
+accessNodeUrl: "http://localhost:8888",
+discoveryWallet: "http://localhost:8701/fcl/authn",
+discoveryAuthnEndpoint: "http://localhost:8701/fcl/authn",
+flowNetwork: "emulator",
+```
 
-1. **Modify the pair**: Change from FLOW → Beaver to another pair
-2. **Add UI features**: Create plan form, execution history table
-3. **Integrate real swaps**: Replace `simulateSwap()` with IncrementFi
-4. **Add more DeFi actions**: Integrate oracles, flashers, or yield sources
+## Running on Flow Emulator
 
-### For Developers
+The Flow Emulator allows you to run a local Flow blockchain for development and testing. The Connect button works seamlessly with the emulator's dev wallet.
 
-1. **Flow Actions deep dive**: Study the Flow Actions scaffold
-2. **Scheduled Transactions**: Explore `FlowTransactionScheduler` integration
-3. **Advanced DeFi math**: Implement APY calculations, impermanent loss tracking
-4. **Multi-token support**: Extend to support any token pair
+### Prerequisites
 
----
+Install the Flow CLI ([full installation guide](https://developers.flow.com/build/tools/flow-cli/install)):
 
-## 📖 Further Reading
+```bash
+# macOS (Homebrew - recommended)
+brew install flow-cli
 
-### Official Flow Documentation
+# macOS/Linux (pre-built binary)
+sudo sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"
 
-- [Cadence 1.0 Language Reference](https://developers.flow.com/cadence/language)
-- [Flow Actions Framework](https://github.com/onflow/flow-actions)
-- [Scheduled Transactions Guide](https://developers.flow.com/build/advanced-concepts/scheduled-transactions)
-- [FCL Documentation](https://developers.flow.com/tools/clients/fcl-js)
+# Windows (PowerShell)
+iex "& { $(irm 'https://raw.githubusercontent.com/onflow/flow-cli/master/install.ps1') }"
+```
 
-### Example Projects
+Verify installation:
 
-- **Scheduled Transactions Scaffold**: Official scaffold for scheduled transactions
-- **Flow Actions Scaffold**: Official scaffold for Flow Actions
-- **ChronoBond**: Example of scheduled DeFi operations
-- **Fast Break Vaults**: Auto-compounding vault example
-- **IncrementFi**: DEX with Flow Actions connectors
+```bash
+flow version
+```
 
-### Community
+### Project Setup for Emulator
 
-- [Flow Discord](https://discord.gg/flow)
-- [Flow Forum](https://forum.onflow.org/)
-- [Flow GitHub](https://github.com/onflow)
+This project has been initialized with `flow init`, which created the necessary Cadence development environment:
 
----
+```bash
+cadence/
+├── contracts/
+│   └── Counter.cdc              # Example smart contract
+├── scripts/
+│   └── GetCounter.cdc           # Script to read contract state
+├── transactions/
+│   └── IncrementCounter.cdc     # Transaction to modify state
+└── tests/
+    └── Counter_test.cdc         # Contract tests
 
-## 🤝 Contributing
+flow.json                        # Flow configuration file
+emulator-account.pkey            # Emulator account private key
+```
 
-This is an educational project. Contributions welcome!
+### Starting the Emulator
 
-1. Fork the repo
-2. Create a feature branch
-3. Make your changes
-4. Add tests and documentation
-5. Submit a pull request
+**IMPORTANT**: You must start BOTH the Flow Emulator AND the Dev Wallet before trying to connect your wallet in the application.
 
----
+1. **Start the Flow Emulator (Terminal 1):**
 
-## 📄 License
+   ```bash
+   flow emulator start
+   ```
 
-MIT License - See LICENSE file for details
+   This starts the Flow Emulator on `http://localhost:8888`. Keep this terminal window open.
 
----
+2. **Start the Dev Wallet (Terminal 2):**
 
-## 🙏 Acknowledgments
+   Open a **new terminal** and run:
 
-Built with:
-- **Flow Blockchain** - Cadence 1.0 and Forte features
-- **IncrementFi** - DEX and Flow Actions connectors
-- **Flow Team** - Official scaffolds and examples
-- **Next.js + Tailwind** - Frontend stack
+   ```bash
+   flow dev-wallet
+   ```
 
----
+   This starts the Dev Wallet on `http://localhost:8701`. Keep this terminal window open as well.
 
-**Happy DCA investing on Flow! 🚀**
+3. **Configure FlowProvider for Emulator**
+
+   The `src/components/flow-provider-wrapper.tsx` is already configured for the emulator with the `flowJson` prop:
+
+   ```typescript
+   import flowJSON from "../../flow.json";
+
+   export function FlowProviderWrapper({ children }: FlowProviderWrapperProps) {
+     return (
+       <FlowProvider
+         config={{
+           // Emulator configuration
+           accessNodeUrl: "http://localhost:8888",
+           discoveryWallet: "http://localhost:8701/fcl/authn",
+           flowNetwork: "emulator",
+
+           // App metadata
+           appDetailTitle: "Flow React SDK Starter",
+           appDetailUrl:
+             typeof window !== "undefined" ? window.location.origin : "",
+           appDetailIcon: "https://avatars.githubusercontent.com/u/62387156?v=4",
+           appDetailDescription:
+             "A Next.js starter template for Flow blockchain applications",
+
+           // Optional configuration
+           computeLimit: 1000,
+         }}
+         flowJson={flowJSON}
+       >
+         {children}
+       </FlowProvider>
+     );
+   }
+   ```
+
+   The `flowJson` prop automatically loads contract addresses and account configuration from `flow.json`, making it easier to work with deployed contracts on the emulator.
+
+4. **Start the NextJS Development Server (Terminal 3):**
+
+   Open another terminal and run:
+
+   ```bash
+   npm run dev
+   ```
+
+5. **Connect with Dev Wallet:**
+
+   Click the "Connect Wallet" button - it will open the Flow Dev Wallet UI at `http://localhost:8701`. The dev wallet comes with pre-funded test accounts ready to use.
+
+## Tutorial Examples
+
+The starter includes interactive tutorial components that demonstrate core Flow SDK features:
+
+### 1. Wallet Connection
+
+```typescript
+import { Connect } from "@onflow/react-sdk";
+
+// Official Connect component with wallet discovery
+<Connect />
+```
+
+Get [Flow Wallet](https://wallet.flow.com) to get started.
+
+### 2. Query Balance (useFlowQuery)
+
+```typescript
+import { useFlowCurrentUser, useFlowQuery } from "@onflow/react-sdk";
+
+const { user } = useFlowCurrentUser();
+const { data: balance, isLoading, error, refetch } = useFlowQuery({
+  cadence: FLOW_BALANCE_SCRIPT,
+  args: (arg, t) => [arg(user?.addr || "", t.Address)],
+});
+```
+
+The `useFlowQuery` hook executes Cadence scripts to read blockchain data.
+
+### 3. Send Transaction (useFlowMutate)
+
+```typescript
+import { useFlowMutate } from "@onflow/react-sdk";
+
+const { mutate, isPending, isSuccess, error } = useFlowMutate();
+
+const handleSend = () => {
+  const formattedAmount = parseFloat(amount).toFixed(8);
+  mutate({
+    cadence: TRANSFER_FLOW_TRANSACTION,
+    args: (arg, t) => [arg(formattedAmount, t.UFix64), arg(recipient, t.Address)],
+  });
+};
+```
+
+The `useFlowMutate` hook executes Cadence transactions that modify blockchain state.
+
+## Resources
+
+- [Flow Wallet](https://wallet.flow.com) - Official Flow wallet
+- [Flow Testnet Faucet](https://faucet.flow.com/fund-account) - Get free testnet tokens
+- [Flow React SDK Documentation](https://react.flow.com) - Complete SDK reference
+- [Flow Developer Portal](https://developers.flow.com) - Developer resources
+- [Cadence Documentation](https://cadence-lang.org) - Smart contract language
+- [FCL GitHub](https://github.com/onflow/fcl-js) - Flow Client Library
+- [FlowScan](https://testnet.flowscan.io) - Testnet block explorer
