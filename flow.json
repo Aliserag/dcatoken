@@ -1,50 +1,25 @@
 {
-  "contracts": {
-    "DCAController": "./cadence/contracts/DCAController.cdc",
-    "DCAPlan": "./cadence/contracts/DCAPlan.cdc",
-    "DeFiMath": "./cadence/contracts/DeFiMath.cdc",
-    "ScheduledHandler": "./cadence/contracts/ScheduledHandler.cdc",
-    "IncrementRoutes": "./cadence/contracts/IncrementRoutes.cdc"
-  },
-  "networks": {
-    "emulator": {
-      "host": "127.0.0.1:3569"
-    },
-    "testnet": {
-      "host": "access.devnet.nodes.onflow.org:9000"
-    },
-    "mainnet": {
-      "host": "access.mainnet.nodes.onflow.org:9000"
-    }
-  },
-  "accounts": {
-    "emulator-account": {
-      "address": "f8d6e0586b0a20c7",
-      "key": "ae1b44c0f5e8f6cc82b8b6e7d8c0f5e8f6cc82b8b6e7d8c0f5e8f6cc82b8b6e7"
-    },
-    "testnet-account": {
-      "address": "${TESTNET_ADDRESS}",
-      "key": "${TESTNET_PRIVATE_KEY}"
-    }
-  },
-  "deployments": {
-    "emulator": {
-      "emulator-account": [
-        "DCAController",
-        "DCAPlan",
-        "DeFiMath",
-        "ScheduledHandler",
-        "IncrementRoutes"
-      ]
-    },
-    "testnet": {
-      "testnet-account": [
-        "DCAController",
-        "DCAPlan",
-        "DeFiMath",
-        "ScheduledHandler",
-        "IncrementRoutes"
-      ]
-    }
-  }
+	"contracts": {
+		"Counter": {
+			"source": "cadence/contracts/Counter.cdc",
+			"aliases": {
+				"testing": "0000000000000007"
+			}
+		}
+	},
+	"networks": {
+		"emulator": "127.0.0.1:3569",
+		"mainnet": "access.mainnet.nodes.onflow.org:9000",
+		"testing": "127.0.0.1:3569",
+		"testnet": "access.devnet.nodes.onflow.org:9000"
+	},
+	"accounts": {
+		"emulator-account": {
+			"address": "f8d6e0586b0a20c7",
+			"key": {
+				"type": "file",
+				"location": "emulator-account.pkey"
+			}
+		}
+	}
 }
