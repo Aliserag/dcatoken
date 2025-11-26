@@ -135,7 +135,7 @@ access(all) contract DeFiMath {
     ///
     /// @param slippageBps: Slippage in basis points
     /// @return true if valid, false otherwise
-    access(all) fun isValidSlippage(slippageBps: UInt64): Bool {
+    access(all) view fun isValidSlippage(slippageBps: UInt64): Bool {
         // Typically DCA should use 0.1% - 5% slippage (10 - 500 bps)
         // But we allow up to 100% for flexibility
         return slippageBps <= self.BPS_SCALE

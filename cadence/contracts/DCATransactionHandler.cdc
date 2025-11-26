@@ -2,7 +2,7 @@ import "FlowTransactionScheduler"
 import "DCAController"
 import "DCAPlan"
 import "DeFiMath"
-import "DeFiActions"
+// import "DeFiActions"  // TODO: Enable when integrating real IncrementFi swaps
 import "FungibleToken"
 import "FlowToken"
 
