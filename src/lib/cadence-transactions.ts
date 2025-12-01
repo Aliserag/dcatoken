@@ -25,6 +25,31 @@ transaction {
             return
         }
 
+        // Initialize USDT vault if it doesn't exist
+        if signer.storage.borrow<&TeleportedTetherToken.Vault>(
+            from: /storage/teleportedTetherTokenVault
+        ) == nil {
+            // Create empty USDT vault
+            let usdtVault <- TeleportedTetherToken.createEmptyVault(vaultType: Type<@TeleportedTetherToken.Vault>())
+
+            // Save vault to storage
+            signer.storage.save(<-usdtVault, to: /storage/teleportedTetherTokenVault)
+
+            // Create public receiver capability
+            let receiverCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
+                /storage/teleportedTetherTokenVault
+            )
+            signer.capabilities.publish(receiverCap, at: /public/teleportedTetherTokenReceiver)
+
+            // Create public balance capability
+            let balanceCap = signer.capabilities.storage.issue<&TeleportedTetherToken.Vault>(
+                /storage/teleportedTetherTokenVault
+            )
+            signer.capabilities.publish(balanceCap, at: /public/teleportedTetherTokenBalance)
+
+            log("USDT vault initialized")
+        }
+
         // Create controller
         let controller <- DCAController.createController()
 
