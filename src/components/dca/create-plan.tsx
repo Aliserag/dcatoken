@@ -229,7 +229,19 @@ export function CreateDCAPlan() {
               {isFlowToToken ? (
                 <>
                   <div className="flex items-center gap-2 min-w-[100px]">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00EF8B] to-[#00D9FF] flex items-center justify-center text-white font-bold text-sm">
+                    {getTokenLogoUrl('FLOW') ? (
+                      <img
+                        src={getTokenLogoUrl('FLOW')}
+                        alt="FLOW"
+                        className="w-8 h-8 rounded-full"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00EF8B] to-[#00D9FF] flex items-center justify-center text-white font-bold text-sm" style={{ display: getTokenLogoUrl('FLOW') ? 'none' : 'flex' }}>
                       F
                     </div>
                     <span className="font-semibold">FLOW</span>
@@ -336,7 +348,20 @@ export function CreateDCAPlan() {
               ) : (
                 <>
                   <div className="flex items-center gap-2 min-w-[100px]">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00EF8B] to-[#00D9FF] flex items-center justify-center text-white font-bold text-sm">
+                    {getTokenLogoUrl('FLOW') ? (
+                      <img
+                        src={getTokenLogoUrl('FLOW')}
+                        alt="FLOW"
+                        className="w-8 h-8 rounded-full"
+                        onError={(e) => {
+                          // Fallback to gradient circle if logo fails
+                          e.currentTarget.style.display = 'none';
+                          const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00EF8B] to-[#00D9FF] flex items-center justify-center text-white font-bold text-sm" style={{ display: getTokenLogoUrl('FLOW') ? 'none' : 'flex' }}>
                       F
                     </div>
                     <span className="font-semibold">FLOW</span>
