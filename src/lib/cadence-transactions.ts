@@ -10,9 +10,9 @@
  * Must be run once before creating any plans
  */
 export const SETUP_CONTROLLER_TX = `
-import "DCAController"
-import "FlowToken"
-import "FungibleToken"
+import DCAController from 0xDCAController
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
 import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 transaction {
@@ -69,10 +69,10 @@ transaction {
  * @param firstExecutionDelay - Seconds until first execution (UInt64)
  */
 export const CREATE_PLAN_TX = `
-import "DCAPlan"
-import "DCAController"
-import "DeFiMath"
-import "FlowToken"
+import DCAPlan from 0xDCAPlan
+import DCAController from 0xDCAController
+import DeFiMath from 0xDeFiMath
+import FlowToken from 0xFlowToken
 import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 transaction(
@@ -138,8 +138,8 @@ transaction(
  * @returns Array of plan details
  */
 export const GET_ALL_PLANS_SCRIPT = `
-import "DCAController"
-import "DCAPlan"
+import DCAController from 0xDCAController
+import DCAPlan from 0xDCAPlan
 
 access(all) fun main(address: Address): [DCAPlan.PlanDetails] {
     let account = getAccount(address)
@@ -163,7 +163,7 @@ access(all) fun main(address: Address): [DCAPlan.PlanDetails] {
  * @returns True if controller exists and is configured
  */
 export const CHECK_CONTROLLER_SCRIPT = `
-import "DCAController"
+import DCAController from 0xDCAController
 
 access(all) fun main(address: Address): Bool {
     let account = getAccount(address)
@@ -188,8 +188,8 @@ access(all) fun main(address: Address): Bool {
  * @returns Plan details or nil
  */
 export const GET_PLAN_DETAILS_SCRIPT = `
-import "DCAController"
-import "DCAPlan"
+import DCAController from 0xDCAController
+import DCAPlan from 0xDCAPlan
 
 access(all) fun main(address: Address, planId: UInt64): DCAPlan.PlanDetails? {
     let account = getAccount(address)
