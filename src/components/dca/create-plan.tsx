@@ -176,7 +176,14 @@ export function CreateDCAPlan() {
   const amountNum = parseFloat(amountPerInterval) || 0;
   const totalInvestment = amountNum * numExecutions;
 
-  // Simple price estimation (would need real price oracle in production)
+  // Price estimation from pool reserves
+  // WARNING: This is a ROUGH estimate based on pool ratios
+  // Actual prices may differ significantly due to:
+  // - Pool being out of sync with market prices
+  // - Swap fees (typically 0.3%)
+  // - Price impact from trade size
+  // - Possible decimal normalization issues
+  // TODO: Use IncrementFi price oracle or quote API for accurate pricing
   const estimatedPrice =
     selectedToken && parseFloat(selectedToken.flowReserve) > 0
       ? parseFloat(selectedToken.tokenReserve) /
@@ -416,7 +423,7 @@ export function CreateDCAPlan() {
           <div className="bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
             <div className="space-y-2 text-xs">
               <div className="flex justify-between text-gray-600 dark:text-gray-400">
-                <span>Current price</span>
+                <span>Est. pool price</span>
                 <span className="font-mono">
                   {isFlowToToken ? (
                     <>1 FLOW ≈ {estimatedPrice.toFixed(4)} {selectedToken.symbol}</>
@@ -432,6 +439,11 @@ export function CreateDCAPlan() {
               <div className="flex justify-between text-gray-600 dark:text-gray-400">
                 <span>Estimated gas</span>
                 <span>~0.001 FLOW per swap</span>
+              </div>
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
+                <p className="text-yellow-600 dark:text-yellow-500 text-xs">
+                  ⚠️ Estimate only. Actual execution prices may vary.
+                </p>
               </div>
             </div>
           </div>
