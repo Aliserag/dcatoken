@@ -78,15 +78,16 @@ export function CreateDCAPlan() {
 
       console.log("Fetched tokens from IncrementFi:", tokens);
 
-      // Whitelist only specific stablecoins: USDC, USDT, FUSD
-      const allowedSymbols = ['USDC', 'USDT', 'FUSD'];
+      // Whitelist only specific stablecoins: USDC, USDT
+      // Note: USDF (EVM bridged) not available in IncrementFi pools
+      const allowedSymbols = ['USDC', 'USDT'];
       const whitelistedTokens = tokens.filter(
         token => allowedSymbols.includes(token.symbol)
       );
 
-      // Sort: USDC first (default), then USDT, then FUSD
+      // Sort: USDC first (default), then USDT
       const sortedTokens = whitelistedTokens.sort((a, b) => {
-        const order = { 'USDC': 0, 'USDT': 1, 'FUSD': 2 };
+        const order = { 'USDC': 0, 'USDT': 1 };
         return (order[a.symbol as keyof typeof order] || 999) - (order[b.symbol as keyof typeof order] || 999);
       });
 
