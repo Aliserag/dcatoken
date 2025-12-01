@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import * as fcl from "@onflow/fcl";
-import { GET_ALL_PLANS_SCRIPT } from "@/lib/cadence-transactions";
+import { GET_ALL_PLANS_SCRIPT, PAUSE_PLAN_TX, RESUME_PLAN_TX } from "@/lib/cadence-transactions";
+import { useTransaction } from "@/hooks/use-transaction";
 
 interface DCAPlan {
   id: number;
@@ -101,6 +102,7 @@ export function DCADashboard() {
   const [plans, setPlans] = useState<DCAPlan[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { executeTransaction } = useTransaction();
 
   // Subscribe to user authentication
   useEffect(() => {
@@ -210,6 +212,35 @@ export function DCADashboard() {
   const getProgressPercentage = (plan: DCAPlan) => {
     if (!plan.maxExecutions) return null;
     return Math.round((plan.executionCount / plan.maxExecutions) * 100);
+  };
+
+  const handlePausePlan = async (planId: number) => {
+    const result = await executeTransaction(
+      PAUSE_PLAN_TX,
+      (arg, t) => [arg(planId.toString(), t.UInt64)],
+      500
+    );
+
+    if (result.success && userAddress) {
+      // Refresh plans after pausing
+      setTimeout(() => fetchPlans(userAddress), 2000);
+    }
+  };
+
+  const handleResumePlan = async (planId: number) => {
+    const result = await executeTransaction(
+      RESUME_PLAN_TX,
+      (arg, t) => [
+        arg(planId.toString(), t.UInt64),
+        arg(null, t.Optional(t.UInt64)) // Use nil for delaySeconds (resume with default interval)
+      ],
+      500
+    );
+
+    if (result.success && userAddress) {
+      // Refresh plans after resuming
+      setTimeout(() => fetchPlans(userAddress), 2000);
+    }
   };
 
   const totalInvested = plans.reduce(
@@ -376,9 +407,27 @@ export function DCADashboard() {
                       >
                         {plan.status.toUpperCase()}
                       </span>
-                      <button className="px-4 py-2 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#3a3a3a] rounded-lg text-sm font-medium transition-colors cursor-pointer">
-                        Manage
-                      </button>
+                      {plan.status === "active" && (
+                        <button
+                          onClick={() => handlePausePlan(plan.id)}
+                          className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+                        >
+                          Pause
+                        </button>
+                      )}
+                      {plan.status === "paused" && (
+                        <button
+                          onClick={() => handleResumePlan(plan.id)}
+                          className="px-4 py-2 bg-[#00EF8B] hover:bg-[#00D9FF] text-black rounded-lg text-sm font-medium transition-colors cursor-pointer"
+                        >
+                          Resume
+                        </button>
+                      )}
+                      {plan.status === "completed" && (
+                        <span className="px-4 py-2 text-sm text-gray-500">
+                          Completed
+                        </span>
+                      )}
                     </div>
                   </div>
 
