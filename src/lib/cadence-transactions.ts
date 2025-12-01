@@ -344,3 +344,44 @@ access(all) fun getTokenSymbol(_ contractName: String): String {
     }
 }
 `;
+
+/**
+ * Get token balance for an address
+ *
+ * @param address - Account address
+ * @param tokenType - "FLOW" or "USDT"
+ * @returns Balance as UFix64
+ */
+export const GET_TOKEN_BALANCE_SCRIPT = `
+import FungibleToken from 0xFungibleToken
+import FlowToken from 0xFlowToken
+import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
+
+access(all) fun main(address: Address, tokenType: String): UFix64 {
+    let account = getAccount(address)
+
+    if tokenType == "FLOW" {
+        let vaultRef = account.capabilities
+            .get<&FlowToken.Vault>(/public/flowTokenBalance)
+            .borrow()
+
+        if vaultRef == nil {
+            return 0.0
+        }
+
+        return vaultRef!.balance
+    } else if tokenType == "USDT" {
+        let vaultRef = account.capabilities
+            .get<&TeleportedTetherToken.Vault>(/public/teleportedTetherTokenBalance)
+            .borrow()
+
+        if vaultRef == nil {
+            return 0.0
+        }
+
+        return vaultRef!.balance
+    }
+
+    return 0.0
+}
+`;
