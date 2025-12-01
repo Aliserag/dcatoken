@@ -155,12 +155,16 @@ export function CreateDCAPlan() {
   };
 
   const handleMaxClick = () => {
-    const balance = isFlowToToken ? flowBalance : usdtBalance;
-    // Reserve 0.001 for gas if it's FLOW
-    const maxAmount = isFlowToToken
-      ? Math.max(0, parseFloat(balance) - 0.001).toFixed(2)
-      : balance;
-    setAmountPerInterval(maxAmount);
+    if (isFlowToToken) {
+      // FLOW -> Token: Use FLOW balance and reserve gas
+      const flowBal = parseFloat(flowBalance) || 0;
+      const maxAmount = Math.max(0, flowBal - 0.001).toFixed(2);
+      setAmountPerInterval(maxAmount);
+    } else {
+      // Token -> FLOW: Use USDT balance, no gas reservation needed
+      const usdtBal = parseFloat(usdtBalance) || 0;
+      setAmountPerInterval(usdtBal.toFixed(2));
+    }
   };
 
   const handleSetupController = async (e: React.FormEvent) => {
