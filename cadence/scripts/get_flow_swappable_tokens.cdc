@@ -1,5 +1,5 @@
-import "SwapFactory"
-import "SwapInterfaces"
+import SwapFactory from 0xb063c16cac85dbd1
+import SwapInterfaces from 0xb78ef7afa52ff906
 
 /// Query all IncrementFi pools that have FLOW as one of the pair tokens
 /// Returns token information for tokens that can be swapped with FLOW
