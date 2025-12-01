@@ -1,6 +1,7 @@
 import "DCAPlan"
 import "FungibleToken"
 import "FlowToken"
+import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 /// DCAController: User's DCA management resource
 ///

@@ -2,9 +2,10 @@ import "FlowTransactionScheduler"
 import "DCAController"
 import "DCAPlan"
 import "DeFiMath"
-// import "DeFiActions"  // TODO: Enable when integrating real IncrementFi swaps
 import "FungibleToken"
 import "FlowToken"
+import "SwapRouter"
+import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 /// DCATransactionHandler: Scheduled transaction handler for DCA execution
 ///
@@ -201,11 +202,10 @@ access(all) contract DCATransactionHandler {
             }
         }
 
-        /// Execute swap using DeFi Actions
+        /// Execute swap using IncrementFi SwapRouter
         ///
-        /// This builds a Flow Actions stack: Source → Swapper → Sink
-        /// For the initial version, we use a simplified swap.
-        /// TODO: Integrate real IncrementFi swap connectors
+        /// This uses IncrementFi's production swap infrastructure to swap tokens.
+        /// Supports USDT ↔ FLOW swaps with slippage protection.
         ///
         /// @param planRef: Reference to the DCA plan
         /// @param sourceVaultCap: Capability to withdraw from source vault
@@ -235,27 +235,55 @@ access(all) contract DCATransactionHandler {
             // Withdraw tokens to swap
             let tokensToSwap <- sourceVault.withdraw(amount: amountIn)
 
-            // TODO: Integrate real IncrementFi swap connector via DeFi Actions
-            // For now, use simplified swap simulation
-            let amountOut = self.simulateSwap(amountIn: amountIn)
+            // Determine swap path based on token types
+            let sourceTypeId = planRef.sourceTokenType.identifier
+            let targetTypeId = planRef.targetTokenType.identifier
 
-            // In production, this would be:
-            // 1. Create swapper connector from IncrementFi
-            // 2. Calculate minimum output with slippage protection
-            // 3. Execute swap via DeFi Actions
-            // 4. Receive swapped tokens
-            //
-            // Example:
-            // let swapper = IncrementSwapConnector.createSwapper(...)
-            // let minOut = DeFiMath.calculateMinOutWithSlippage(
-            //     amountIn: amountIn,
-            //     expectedPriceFP128: planRef.avgExecutionPriceFP128,
-            //     slippageBps: planRef.maxSlippageBps
-            // )
-            // let swappedTokens <- swapper.swap(tokens: <-tokensToSwap, minOut: minOut)
+            let tokenPath: [String] = []
+            if sourceTypeId.contains("TeleportedTetherToken") && targetTypeId.contains("FlowToken") {
+                // USDT → FLOW
+                tokenPath.append("A.cfdd90d4a00f7b5b.TeleportedTetherToken")
+                tokenPath.append("A.1654653399040a61.FlowToken")
+            } else if sourceTypeId.contains("FlowToken") && targetTypeId.contains("TeleportedTetherToken") {
+                // FLOW → USDT
+                tokenPath.append("A.1654653399040a61.FlowToken")
+                tokenPath.append("A.cfdd90d4a00f7b5b.TeleportedTetherToken")
+            } else {
+                // Unsupported swap path
+                destroy tokensToSwap
+                return ExecutionResult(
+                    success: false,
+                    amountIn: nil,
+                    amountOut: nil,
+                    errorMessage: "Unsupported token pair. Only USDT ↔ FLOW swaps are currently supported."
+                )
+            }
 
-            // For now, tokensToSwap represents the swapped tokens
-            let swappedTokens <- tokensToSwap
+            // Get expected output amount from IncrementFi
+            let expectedAmountsOut = SwapRouter.getAmountsOut(
+                amountIn: amountIn,
+                tokenKeyPath: tokenPath
+            )
+            let expectedAmountOut = expectedAmountsOut[expectedAmountsOut.length - 1]
+
+            // Calculate minimum output with slippage protection
+            // maxSlippageBps is in basis points (100 = 1%)
+            let slippageMultiplier = 10000 - planRef.maxSlippageBps
+            let minAmountOut = expectedAmountOut * UFix64(slippageMultiplier) / 10000.0
+
+            // Set deadline (5 minutes from now)
+            let deadline = getCurrentBlock().timestamp + 300.0
+
+            // Execute swap via IncrementFi SwapRouter
+            let swappedTokens <- SwapRouter.swapExactTokensForTokens(
+                exactVaultIn: <-tokensToSwap,
+                amountOutMin: minAmountOut,
+                tokenKeyPath: tokenPath,
+                deadline: deadline
+            )
+
+            // Get actual output amount
+            let actualAmountOut = swappedTokens.balance
 
             // Deposit to target vault
             let targetVault = targetVaultCap.borrow()
@@ -266,22 +294,9 @@ access(all) contract DCATransactionHandler {
             return ExecutionResult(
                 success: true,
                 amountIn: amountIn,
-                amountOut: amountOut,
+                amountOut: actualAmountOut,
                 errorMessage: nil
             )
-        }
-
-        /// Simulate a swap for testing/development
-        ///
-        /// Returns a simulated output amount based on a mock price.
-        /// TODO: Replace with real IncrementFi swap connector
-        access(self) fun simulateSwap(amountIn: UFix64): UFix64 {
-            // Simulate: 1 FLOW = 2.5 Beaver
-            // Add small variance based on block height for realism
-            let basePrice = 2.5
-            let variance = 0.02
-            let randomFactor = 1.0 + (variance * (UFix64(getCurrentBlock().height % 100) / 100.0 - 0.5))
-            return amountIn * basePrice * randomFactor
         }
 
         /// Get supported view types (for resource metadata)

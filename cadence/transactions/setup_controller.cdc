@@ -1,6 +1,7 @@
 import "DCAController"
 import "FlowToken"
 import "FungibleToken"
+import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 /// Setup DCA Controller
 ///
@@ -11,9 +12,9 @@ import "FungibleToken"
 /// 1. Create new Controller resource
 /// 2. Save to storage
 /// 3. Link public capability
-/// 4. Configure vault capabilities for FLOW (source) and target token
+/// 4. Configure vault capabilities for USDT (source) and FLOW (target)
 ///
-/// Required: User must have FlowToken vault initialized
+/// Required: User must have USDT and FLOW vaults initialized
 transaction() {
     prepare(signer: auth(Storage, Capabilities) &Account) {
         // Check if controller already exists
@@ -36,9 +37,10 @@ transaction() {
 
         log("DCA Controller created successfully")
 
-        // Configure source vault capability (FLOW)
+        // Configure source vault capability (USDT)
+        // This allows DCA plans to withdraw USDT for swapping to FLOW
         let sourceVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
-            /storage/flowTokenVault
+            /storage/teleportedTetherTokenVault
         )
 
         let controllerRef = signer.storage.borrow<&DCAController.Controller>(
@@ -47,19 +49,19 @@ transaction() {
 
         controllerRef.setSourceVaultCapability(cap: sourceVaultCap)
 
-        log("Source vault capability configured for FLOW")
+        log("Source vault capability configured for USDT")
 
-        // Note: Target vault capability should be configured after target token vault is initialized
-        // For now, we'll use FLOW as both source and target for testing
+        // Configure target vault capability (FLOW)
+        // This allows DCA plans to deposit the FLOW received from swaps
         let targetVaultCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
             /storage/flowTokenVault
         )
         controllerRef.setTargetVaultCapability(cap: targetVaultCap)
 
-        log("Target vault capability configured (using FLOW for testing)")
+        log("Target vault capability configured for FLOW")
     }
 
     execute {
-        log("DCA Controller setup complete")
+        log("DCA Controller setup complete for USDT → FLOW DCA")
     }
 }

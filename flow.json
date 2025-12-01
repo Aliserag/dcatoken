@@ -188,6 +188,15 @@
 				"mainnet": "a6850776a94e6551"
 			}
 		},
+		"TeleportedTetherToken": {
+			"source": "mainnet://cfdd90d4a00f7b5b.TeleportedTetherToken",
+			"hash": "559859e871bda364b69a04d8bc167d4dbea4c48bd05e42507748500558b51541",
+			"aliases": {
+				"emulator": "f8d6e0586b0a20c7",
+				"mainnet": "cfdd90d4a00f7b5b",
+				"testnet": "cfdd90d4a00f7b5b"
+			}
+		},
 		"ViewResolver": {
 			"source": "mainnet://1d7e57aa55817448.ViewResolver",
 			"hash": "374a1994046bac9f6228b4843cb32393ef40554df9bd9907a702d098a2987bde",

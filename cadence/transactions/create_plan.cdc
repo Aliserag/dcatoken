@@ -2,20 +2,21 @@ import "DCAPlan"
 import "DCAController"
 import "DeFiMath"
 import "FlowToken"
+import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
-/// Create DCA Plan
+/// Create DCA Plan for USDT → FLOW
 ///
-/// This transaction creates a new DCA plan and adds it to the user's controller.
+/// This transaction creates a new DCA plan that swaps USDT to FLOW at regular intervals.
 ///
 /// Parameters:
-/// - amountPerInterval: Amount of FLOW to invest each interval (e.g., 10.0)
+/// - amountPerInterval: Amount of USDT to invest each interval (e.g., 10.0)
 /// - intervalDays: Days between executions (e.g., 7 for weekly)
 /// - maxSlippageBps: Max acceptable slippage in basis points (e.g., 100 = 1%)
 /// - maxExecutions: Optional max number of executions (nil = unlimited)
 /// - firstExecutionDelay: Seconds until first execution (e.g., 60 for 1 minute)
 ///
 /// Example:
-/// - amountPerInterval: 10.0 FLOW
+/// - amountPerInterval: 10.0 USDT
 /// - intervalDays: 7 (weekly)
 /// - maxSlippageBps: 100 (1% slippage)
 /// - maxExecutions: nil (unlimited)
@@ -55,12 +56,10 @@ transaction(
         // Calculate first execution time
         let firstExecutionTime = getCurrentBlock().timestamp + UFix64(firstExecutionDelay)
 
-        // Create plan
-        // Note: Using FlowToken for both source and target for testing
-        // In production, target would be Beaver or another token
+        // Create plan for USDT → FLOW swap
         let plan <- DCAPlan.createPlan(
-            sourceTokenType: Type<@FlowToken.Vault>(),
-            targetTokenType: Type<@FlowToken.Vault>(), // TODO: Replace with target token type
+            sourceTokenType: Type<@TeleportedTetherToken.Vault>(),
+            targetTokenType: Type<@FlowToken.Vault>(),
             amountPerInterval: amountPerInterval,
             intervalSeconds: intervalSeconds,
             maxSlippageBps: maxSlippageBps,
@@ -69,10 +68,10 @@ transaction(
         )
 
         let planId = plan.id
-        log("Created DCA Plan with ID: ".concat(planId.toString()))
+        log("Created USDT → FLOW DCA Plan with ID: ".concat(planId.toString()))
         log("First execution scheduled for: ".concat(firstExecutionTime.toString()))
         log("Interval: ".concat(intervalDays.toString()).concat(" days (").concat(intervalSeconds.toString()).concat(" seconds)"))
-        log("Amount per interval: ".concat(amountPerInterval.toString()).concat(" FLOW"))
+        log("Amount per interval: ".concat(amountPerInterval.toString()).concat(" USDT"))
         log("Max slippage: ".concat(maxSlippageBps.toString()).concat(" bps (").concat((UFix64(maxSlippageBps) / 100.0).toString()).concat("%)"))
 
         if maxExecutions != nil {
@@ -85,13 +84,8 @@ transaction(
         self.controllerRef.addPlan(plan: <-plan)
 
         log("Plan added to controller successfully")
-        log("")
-        log("Next step: Schedule the first execution using schedule_dca_plan.cdc")
-        log("  flow transactions send cadence/transactions/schedule_dca_plan.cdc \\")
-        log("    ".concat(planId.toString()).concat(" ").concat(firstExecutionDelay.toString()).concat(" 128 1000 \\"))
-        log("    --network emulator --signer emulator-account")
 
-        // Verify plan was added (using execute block to avoid view context issues)
+        // Verify plan was added
         let planCount = self.controllerRef.getPlanIds().length
         assert(planCount > 0, message: "Plan was not added to controller")
     }
