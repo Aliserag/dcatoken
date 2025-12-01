@@ -240,22 +240,33 @@ access(all) struct TokenInfo {
 }
 
 access(all) fun main(): [TokenInfo] {
-    let flowTokenIdentifier = "A.0ae53cb6e3f42a79.FlowToken.Vault"
+    let flowTokenIdentifier = "A.1654653399040a61.FlowToken"
     let tokenInfos: [TokenInfo] = []
 
-    let allPairInfos = SwapFactory.getAllPairsInfo()
+    let pairsCount = SwapFactory.getAllPairsLength()
+    if pairsCount == 0 {
+        return []
+    }
 
-    for pairInfo in allPairInfos {
-        let token0 = pairInfo.token0Key.identity
-        let token1 = pairInfo.token1Key.identity
+    let limit: UInt64 = pairsCount > 50 ? 50 : UInt64(pairsCount)
+    let allPairInfos = SwapFactory.getSlicedPairInfos(from: 0, to: limit - 1)
+
+    for pairInfoRaw in allPairInfos {
+        let pairInfo = pairInfoRaw as! [AnyStruct]
+        let token0 = (pairInfo[0] as! String)
+        let token1 = (pairInfo[1] as! String)
+        let token0Reserve = (pairInfo[2] as! UFix64)
+        let token1Reserve = (pairInfo[3] as! UFix64)
+        let pairAddr = (pairInfo[4] as! Address)
+        let isStableSwap = (pairInfo[7] as! Bool)
 
         var targetToken: String? = nil
         var isToken0Flow = false
 
-        if token0 == flowTokenIdentifier {
+        if token0.slice(from: 0, upTo: token0.length).contains(flowTokenIdentifier) {
             targetToken = token1
             isToken0Flow = true
-        } else if token1 == flowTokenIdentifier {
+        } else if token1.slice(from: 0, upTo: token1.length).contains(flowTokenIdentifier) {
             targetToken = token0
             isToken0Flow = false
         }
@@ -266,21 +277,18 @@ access(all) fun main(): [TokenInfo] {
             let tokenContract = parts.length > 2 ? parts[2] : ""
             let symbol = getTokenSymbol(tokenContract)
 
-            let reserve0Str = pairInfo.token0Amount.toString()
-            let reserve1Str = pairInfo.token1Amount.toString()
-
-            let flowReserve = isToken0Flow ? reserve0Str : reserve1Str
-            let tokenReserve = isToken0Flow ? reserve1Str : reserve0Str
+            let flowReserve = isToken0Flow ? token0Reserve.toString() : token1Reserve.toString()
+            let tokenReserve = isToken0Flow ? token1Reserve.toString() : token0Reserve.toString()
 
             tokenInfos.append(TokenInfo(
                 symbol: symbol,
                 tokenAddress: tokenAddress,
                 tokenContract: tokenContract,
                 tokenIdentifier: targetToken!,
-                pairAddress: pairInfo.pairAddr,
+                pairAddress: pairAddr,
                 flowReserve: flowReserve,
                 tokenReserve: tokenReserve,
-                isStable: pairInfo.isStableSwap
+                isStable: isStableSwap
             ))
         }
     }
