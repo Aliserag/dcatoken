@@ -8,6 +8,7 @@ import {
   CREATE_PLAN_TX,
   CHECK_CONTROLLER_SCRIPT,
   GET_FLOW_SWAPPABLE_TOKENS_SCRIPT,
+  GET_TOKEN_BALANCE_SCRIPT,
 } from "@/lib/cadence-transactions";
 import { TransactionStatus } from "@/config/fcl-config";
 import type { TokenInfo } from "@/lib/token-metadata";
@@ -38,6 +39,11 @@ export function CreateDCAPlan() {
   // Default to false for USDC -> FLOW mode
   const [isFlowToToken, setIsFlowToToken] = useState(false);
 
+  // Balance state
+  const [flowBalance, setFlowBalance] = useState<string>("0.00");
+  const [usdtBalance, setUsdtBalance] = useState<string>("0.00");
+  const [loadingBalance, setLoadingBalance] = useState(false);
+
   const {
     status: txStatus,
     txId,
@@ -54,9 +60,12 @@ export function CreateDCAPlan() {
       if (currentUser && currentUser.addr) {
         setUserAddress(currentUser.addr);
         checkController(currentUser.addr);
+        fetchBalances(currentUser.addr);
       } else {
         setUserAddress(null);
         setControllerConfigured(false);
+        setFlowBalance("0.00");
+        setUsdtBalance("0.00");
       }
     });
 
@@ -118,6 +127,40 @@ export function CreateDCAPlan() {
     } finally {
       setCheckingController(false);
     }
+  };
+
+  const fetchBalances = async (address: string) => {
+    setLoadingBalance(true);
+    try {
+      // Fetch FLOW balance
+      const flowBal: number = await fcl.query({
+        cadence: GET_TOKEN_BALANCE_SCRIPT,
+        args: (arg, t) => [arg(address, t.Address), arg("FLOW", t.String)],
+      });
+      setFlowBalance(flowBal.toFixed(2));
+
+      // Fetch USDT balance
+      const usdtBal: number = await fcl.query({
+        cadence: GET_TOKEN_BALANCE_SCRIPT,
+        args: (arg, t) => [arg(address, t.Address), arg("USDT", t.String)],
+      });
+      setUsdtBalance(usdtBal.toFixed(2));
+    } catch (error) {
+      console.error("Error fetching balances:", error);
+      setFlowBalance("0.00");
+      setUsdtBalance("0.00");
+    } finally {
+      setLoadingBalance(false);
+    }
+  };
+
+  const handleMaxClick = () => {
+    const balance = isFlowToToken ? flowBalance : usdtBalance;
+    // Reserve 0.001 for gas if it's FLOW
+    const maxAmount = isFlowToToken
+      ? Math.max(0, parseFloat(balance) - 0.001).toFixed(2)
+      : balance;
+    setAmountPerInterval(maxAmount);
   };
 
   const handleSetupController = async (e: React.FormEvent) => {
@@ -223,7 +266,18 @@ export function CreateDCAPlan() {
           <div className="space-y-2">
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-600 dark:text-gray-400">You invest</span>
-              <span className="text-xs text-gray-500">Per {selectedInterval.perLabel}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">
+                  Balance: {loadingBalance ? "..." : isFlowToToken ? flowBalance : usdtBalance} {isFlowToToken ? "FLOW" : "USDT"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleMaxClick}
+                  className="text-xs font-medium text-[#00EF8B] hover:text-[#00D9FF] transition-colors"
+                >
+                  MAX
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-3 bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
               {isFlowToToken ? (
