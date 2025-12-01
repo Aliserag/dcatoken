@@ -268,7 +268,7 @@ access(all) contract DCATransactionHandler {
 
             // Calculate minimum output with slippage protection
             // maxSlippageBps is in basis points (100 = 1%)
-            let slippageMultiplier = 10000 - planRef.maxSlippageBps
+            let slippageMultiplier = UInt64(10000) - planRef.maxSlippageBps
             let minAmountOut = expectedAmountOut * UFix64(slippageMultiplier) / 10000.0
 
             // Set deadline (5 minutes from now)

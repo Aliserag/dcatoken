@@ -36,10 +36,10 @@ export const CONTRACTS = {
     SwapInterfaces: "0xb78ef7afa52ff906",
   },
   mainnet: {
-    DeFiMath: "", // To be deployed
-    DCAPlan: "", // To be deployed
-    DCAController: "", // To be deployed
-    DCATransactionHandler: "", // To be deployed
+    DeFiMath: "0xca7ee55e4fc3251a",
+    DCAPlan: "0xca7ee55e4fc3251a",
+    DCAController: "0xca7ee55e4fc3251a",
+    DCATransactionHandler: "0xca7ee55e4fc3251a",
     FlowToken: "0x1654653399040a61",
     FungibleToken: "0xf233dcee88fe0abe",
     FlowTransactionScheduler: "0xe467b9dd11fa00df",
@@ -105,6 +105,10 @@ export const configureFCL = () => {
       "flow.network": "mainnet",
       "accessNode.api": "https://rest-mainnet.onflow.org",
       "discovery.wallet": "https://fcl-discovery.onflow.org/authn",
+      "0xDeFiMath": getContractAddress("DeFiMath"),
+      "0xDCAPlan": getContractAddress("DCAPlan"),
+      "0xDCAController": getContractAddress("DCAController"),
+      "0xDCATransactionHandler": getContractAddress("DCATransactionHandler"),
       "0xFlowToken": getContractAddress("FlowToken"),
       "0xFungibleToken": getContractAddress("FungibleToken"),
       "0xFlowTransactionScheduler": getContractAddress("FlowTransactionScheduler"),
