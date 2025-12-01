@@ -375,6 +375,70 @@ access(all) fun getTokenSymbol(_ contractName: String): String {
 `;
 
 /**
+ * Pause DCA Plan
+ *
+ * @param planId - ID of the plan to pause
+ */
+export const PAUSE_PLAN_TX = `
+import DCAController from 0xDCAController
+
+transaction(planId: UInt64) {
+    let controllerRef: &DCAController.Controller
+
+    prepare(signer: auth(Storage) &Account) {
+        self.controllerRef = signer.storage.borrow<&DCAController.Controller>(
+            from: DCAController.ControllerStoragePath
+        ) ?? panic("DCA Controller not found")
+    }
+
+    execute {
+        let planRef = self.controllerRef.borrowPlan(id: planId)
+            ?? panic("Plan not found with ID: ".concat(planId.toString()))
+
+        planRef.pause()
+
+        log("Plan ".concat(planId.toString()).concat(" has been paused"))
+    }
+}
+`;
+
+/**
+ * Resume DCA Plan
+ *
+ * @param planId - ID of the plan to resume
+ * @param delaySeconds - Optional seconds until next execution (nil = use interval from now)
+ */
+export const RESUME_PLAN_TX = `
+import DCAController from 0xDCAController
+
+transaction(planId: UInt64, delaySeconds: UInt64?) {
+    let controllerRef: &DCAController.Controller
+
+    prepare(signer: auth(Storage) &Account) {
+        self.controllerRef = signer.storage.borrow<&DCAController.Controller>(
+            from: DCAController.ControllerStoragePath
+        ) ?? panic("DCA Controller not found")
+    }
+
+    execute {
+        let planRef = self.controllerRef.borrowPlan(id: planId)
+            ?? panic("Plan not found with ID: ".concat(planId.toString()))
+
+        let nextExecutionTime = delaySeconds != nil
+            ? getCurrentBlock().timestamp + UFix64(delaySeconds!)
+            : nil
+
+        planRef.resume(nextExecutionTime: nextExecutionTime)
+
+        log("Plan ".concat(planId.toString()).concat(" has been resumed"))
+        if nextExecutionTime != nil {
+            log("Next execution at: ".concat(nextExecutionTime!.toString()))
+        }
+    }
+}
+`;
+
+/**
  * Get token balance for an address
  *
  * @param address - Account address

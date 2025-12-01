@@ -184,7 +184,9 @@ export function CreateDCAPlan() {
     }
 
     const slippageBps = Math.floor(parseFloat(slippage) * 100);
-    const firstExecutionDelay = 300;
+    // Set first execution delay to match the selected interval
+    // This makes the first execution happen at the same time as subsequent ones
+    const firstExecutionDelay = parseInt(interval);
 
     // Format amount to ensure it has decimal point for UFix64
     // Convert "1" to "1.0", keep "1.5" as "1.5"
