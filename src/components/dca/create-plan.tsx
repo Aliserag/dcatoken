@@ -34,7 +34,8 @@ export function CreateDCAPlan() {
   const [tokensError, setTokensError] = useState<string | null>(null);
 
   // Swap direction state (true = FLOW -> Token, false = Token -> FLOW)
-  const [isFlowToToken, setIsFlowToToken] = useState(true);
+  // Default to false for USDC -> FLOW mode
+  const [isFlowToToken, setIsFlowToToken] = useState(false);
 
   const {
     status: txStatus,
@@ -77,35 +78,29 @@ export function CreateDCAPlan() {
 
       console.log("Fetched tokens from IncrementFi:", tokens);
 
-      // Filter out USDC (mispriced pool) and keep USDT and other stablecoins
-      const excludedSymbols = ['USDC'];
-      const filteredByExclusion = tokens.filter(
-        token => !excludedSymbols.includes(token.symbol)
+      // Whitelist only specific stablecoins: USDC, USDT, FUSD
+      const allowedSymbols = ['USDC', 'USDT', 'FUSD'];
+      const whitelistedTokens = tokens.filter(
+        token => allowedSymbols.includes(token.symbol)
       );
 
-      // Filter tokens with at least 10 FLOW liquidity (lowered to include USDT and other tokens)
-      const filteredTokens = filterByMinLiquidity(filteredByExclusion, 10);
-
-      // Sort: USDT first (most accurate stable), then by liquidity
-      const sortedTokens = filteredTokens.sort((a, b) => {
-        // Prioritize USDT
-        if (a.symbol === 'USDT') return -1;
-        if (b.symbol === 'USDT') return 1;
-
-        // Then sort by FLOW liquidity
-        return parseFloat(b.flowReserve) - parseFloat(a.flowReserve);
+      // Sort: USDC first (default), then USDT, then FUSD
+      const sortedTokens = whitelistedTokens.sort((a, b) => {
+        const order = { 'USDC': 0, 'USDT': 1, 'FUSD': 2 };
+        return (order[a.symbol as keyof typeof order] || 999) - (order[b.symbol as keyof typeof order] || 999);
       });
 
       setAvailableTokens(sortedTokens);
 
-      // Auto-select first token (should be USDT if available)
-      if (sortedTokens.length > 0) {
-        setSelectedToken(sortedTokens[0]);
+      // Auto-select USDC as default
+      const defaultToken = sortedTokens.find(t => t.symbol === 'USDC') || sortedTokens[0];
+      if (defaultToken) {
+        setSelectedToken(defaultToken);
       }
     } catch (error: any) {
       console.error("Error fetching tokens:", error);
       setTokensError(
-        "Unable to load tokens from IncrementFi. Please check your network connection or try a different network."
+        "Unable to load stablecoins from IncrementFi. Please check your network connection or try a different network."
       );
       setAvailableTokens([]);
       setSelectedToken(null);
@@ -457,7 +452,7 @@ export function CreateDCAPlan() {
               </div>
               <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
                 <p className="text-green-600 dark:text-green-500 text-xs">
-                  ✓ Using IncrementFi pool pricing (USDC excluded due to pool issues)
+                  ✓ Stablecoin DCA powered by IncrementFi pools
                 </p>
               </div>
             </div>
