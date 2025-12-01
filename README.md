@@ -14,10 +14,11 @@
 
 ### Default Configuration
 
-- **Source Token**: FLOW
-- **Target Token**: Configurable (Beaver via IncrementFi)
-- **DEX**: IncrementFi (via DeFi Actions connectors)
-- **Execution**: Autonomous via FlowTransactionScheduler
+- **Source Token**: USDT (TeleportedTetherToken)
+- **Target Token**: FLOW
+- **DEX**: IncrementFi SwapRouter (mainnet-ready)
+- **Swap Route**: USDT → FLOW (direct pair, ~0.22 FLOW/USDT)
+- **Execution**: Autonomous via FlowTransactionScheduler (emulator/testnet)
 
 ## 🚀 Quick Start
 
@@ -64,6 +65,50 @@ npm run dev
 ```
 
 Open [http://localhost:3001](http://localhost:3001) in your browser.
+
+## 🌐 Mainnet Deployment
+
+Ready to deploy to production? This application is fully production-ready with real IncrementFi swap integration.
+
+### Production Features
+
+- ✅ **Real USDT → FLOW Swaps** via IncrementFi SwapRouter
+- ✅ **Slippage Protection** with configurable basis points
+- ✅ **Production-Grade Security** - audited contract patterns
+- ✅ **Mainnet Token Support** - USDT (TeleportedTetherToken) and FLOW
+- ✅ **Gas Optimized** - ~5 FLOW for full deployment
+
+### Quick Deploy
+
+```bash
+# 1. Run setup script
+./scripts/setup-mainnet.sh
+
+# 2. Deploy contracts
+flow project deploy --network mainnet
+
+# 3. Update frontend config with deployed addresses
+# Edit src/config/fcl-config.ts
+```
+
+**For detailed deployment instructions, see:** → **[DEPLOYMENT.md](./DEPLOYMENT.md)**
+
+### Mainnet Contract Addresses
+
+After deployment, your contracts will be at your deployer address:
+
+```
+DeFiMath: 0xYOUR_ADDRESS
+DCAPlan: 0xYOUR_ADDRESS
+DCAController: 0xYOUR_ADDRESS
+DCATransactionHandler: 0xYOUR_ADDRESS
+```
+
+Update `src/config/fcl-config.ts` and `.env.local`:
+
+```env
+NEXT_PUBLIC_FLOW_NETWORK=mainnet
+```
 
 ## 🎨 Frontend Features
 
