@@ -36,6 +36,66 @@ interface CadencePlanDetails {
   createdAt: string;
 }
 
+// Countdown component for next execution
+function CountdownTimer({ targetTimestamp }: { targetTimestamp: string }) {
+  const [timeLeft, setTimeLeft] = useState<{
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const targetTime = parseFloat(targetTimestamp) * 1000; // Convert to milliseconds
+      const now = Date.now();
+      const difference = targetTime - now;
+
+      if (difference <= 0) {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+        return;
+      }
+
+      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((difference / (1000 * 60)) % 60);
+      const seconds = Math.floor((difference / 1000) % 60);
+
+      setTimeLeft({ days, hours, minutes, seconds });
+    };
+
+    // Initial calculation
+    calculateTimeLeft();
+
+    // Update every second
+    const interval = setInterval(calculateTimeLeft, 1000);
+
+    return () => clearInterval(interval);
+  }, [targetTimestamp]);
+
+  if (!timeLeft) return <span className="text-sm text-gray-500">Loading...</span>;
+
+  if (timeLeft.days === 0 && timeLeft.hours === 0 && timeLeft.minutes === 0 && timeLeft.seconds === 0) {
+    return <span className="text-sm text-[#00EF8B]">Ready to execute</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-1 text-sm font-mono">
+      {timeLeft.days > 0 && (
+        <>
+          <span className="font-bold">{timeLeft.days}</span>
+          <span className="text-gray-500">d</span>
+        </>
+      )}
+      <span className="font-bold">{String(timeLeft.hours).padStart(2, '0')}</span>
+      <span className="text-gray-500">:</span>
+      <span className="font-bold">{String(timeLeft.minutes).padStart(2, '0')}</span>
+      <span className="text-gray-500">:</span>
+      <span className="font-bold">{String(timeLeft.seconds).padStart(2, '0')}</span>
+    </div>
+  );
+}
+
 export function DCADashboard() {
   const [userAddress, setUserAddress] = useState<string | null>(null);
   const [plans, setPlans] = useState<DCAPlan[]>([]);
@@ -108,18 +168,18 @@ export function DCADashboard() {
         const createdAt = createdAtTime.toISOString().split("T")[0];
 
         return {
-          id: parseInt(cp.planId),
+          id: parseInt(cp.planId) || 0,
           amount: parseFloat(cp.amountPerInterval).toFixed(2),
           frequency,
           totalInvested,
           totalAcquired,
           avgPrice,
-          executionCount: parseInt(cp.executionCount),
+          executionCount: parseInt(cp.executionCount) || 0,
           maxExecutions: cp.maxExecutions
             ? parseInt(cp.maxExecutions)
             : null,
           status,
-          nextExecution,
+          nextExecution: cp.nextExecutionTime, // Store timestamp for countdown
           createdAt,
         };
       });
@@ -383,12 +443,7 @@ export function DCADashboard() {
                       <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
                         Next Execution
                       </p>
-                      <p className="text-lg font-bold">
-                        {new Date(plan.nextExecution).toLocaleDateString(
-                          "en-US",
-                          { month: "short", day: "numeric" }
-                        )}
-                      </p>
+                      <CountdownTimer targetTimestamp={plan.nextExecution} />
                     </div>
                   </div>
                 </div>
