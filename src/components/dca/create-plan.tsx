@@ -33,6 +33,9 @@ export function CreateDCAPlan() {
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [tokensError, setTokensError] = useState<string | null>(null);
 
+  // Swap direction state (true = FLOW -> Token, false = Token -> FLOW)
+  const [isFlowToToken, setIsFlowToToken] = useState(true);
+
   const {
     status: txStatus,
     txId,
@@ -153,6 +156,10 @@ export function CreateDCAPlan() {
     }
   };
 
+  const handleSwapDirection = () => {
+    setIsFlowToToken(!isFlowToToken);
+  };
+
   const intervalOptions = [
     { value: "0.0166", label: "Minutely", hours: 1 / 60 },
     { value: "1", label: "Hourly", hours: 1 },
@@ -175,7 +182,15 @@ export function CreateDCAPlan() {
       ? parseFloat(selectedToken.tokenReserve) /
         parseFloat(selectedToken.flowReserve)
       : 0;
-  const estimatedOutput = totalInvestment * estimatedPrice;
+
+  // Calculate output based on direction
+  const estimatedOutput = isFlowToToken
+    ? totalInvestment * estimatedPrice // FLOW -> Token
+    : totalInvestment / estimatedPrice; // Token -> FLOW
+
+  // Get display names based on direction
+  const fromToken = isFlowToToken ? "FLOW" : (selectedToken?.symbol || "Token");
+  const toToken = isFlowToToken ? (selectedToken?.symbol || "Token") : "FLOW";
 
   return (
     <div className="w-full max-w-xl mx-auto">
@@ -192,37 +207,81 @@ export function CreateDCAPlan() {
 
         {/* Swap-like Interface */}
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-2xl p-6 space-y-3">
-          {/* From Token (FLOW) */}
+          {/* From Token */}
           <div className="space-y-2">
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-600 dark:text-gray-400">You invest</span>
               <span className="text-xs text-gray-500">Per {selectedInterval.label.toLowerCase()}</span>
             </div>
             <div className="flex items-center gap-3 bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
-              <div className="flex items-center gap-2 min-w-[100px]">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00EF8B] to-[#00D9FF] flex items-center justify-center text-white font-bold text-sm">
-                  F
-                </div>
-                <span className="font-semibold">FLOW</span>
-              </div>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={amountPerInterval}
-                onChange={(e) => setAmountPerInterval(e.target.value)}
-                placeholder="0.00"
-                required
-                className="flex-1 bg-transparent text-right text-2xl font-semibold outline-none cursor-text"
-              />
+              {isFlowToToken ? (
+                <>
+                  <div className="flex items-center gap-2 min-w-[100px]">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00EF8B] to-[#00D9FF] flex items-center justify-center text-white font-bold text-sm">
+                      F
+                    </div>
+                    <span className="font-semibold">FLOW</span>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={amountPerInterval}
+                    onChange={(e) => setAmountPerInterval(e.target.value)}
+                    placeholder="0.00"
+                    required
+                    className="flex-1 bg-transparent text-right text-2xl font-semibold outline-none cursor-text"
+                  />
+                </>
+              ) : (
+                <>
+                  <select
+                    value={selectedToken?.tokenIdentifier || ""}
+                    onChange={(e) => {
+                      const token = availableTokens.find(
+                        (t) => t.tokenIdentifier === e.target.value
+                      );
+                      setSelectedToken(token || null);
+                    }}
+                    disabled={loadingTokens || availableTokens.length === 0}
+                    className="flex items-center gap-2 min-w-[100px] bg-transparent font-semibold outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {loadingTokens ? (
+                      <option>Loading...</option>
+                    ) : availableTokens.length === 0 ? (
+                      <option>No tokens</option>
+                    ) : (
+                      availableTokens.map((token) => (
+                        <option key={token.tokenIdentifier} value={token.tokenIdentifier}>
+                          {token.symbol}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={amountPerInterval}
+                    onChange={(e) => setAmountPerInterval(e.target.value)}
+                    placeholder="0.00"
+                    required
+                    className="flex-1 bg-transparent text-right text-2xl font-semibold outline-none cursor-text"
+                  />
+                </>
+              )}
             </div>
           </div>
 
-          {/* Arrow Separator */}
+          {/* Arrow Separator - Clickable */}
           <div className="flex justify-center -my-1">
-            <div className="bg-gray-100 dark:bg-[#2a2a2a] rounded-lg p-2">
+            <button
+              type="button"
+              onClick={handleSwapDirection}
+              className="bg-gray-100 dark:bg-[#2a2a2a] hover:bg-[#00EF8B] dark:hover:bg-[#00EF8B] rounded-lg p-2 transition-all cursor-pointer group"
+            >
               <svg
-                className="w-5 h-5 text-gray-600 dark:text-gray-400"
+                className="w-5 h-5 text-gray-600 dark:text-gray-400 group-hover:text-black transition-colors"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -231,45 +290,61 @@ export function CreateDCAPlan() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                  d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
                 />
               </svg>
-            </div>
+            </button>
           </div>
 
-          {/* To Token (Selected Token) */}
+          {/* To Token */}
           <div className="space-y-2">
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-600 dark:text-gray-400">You accumulate</span>
               <span className="text-xs text-gray-500">Est. total output</span>
             </div>
             <div className="flex items-center gap-3 bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
-              <select
-                value={selectedToken?.tokenIdentifier || ""}
-                onChange={(e) => {
-                  const token = availableTokens.find(
-                    (t) => t.tokenIdentifier === e.target.value
-                  );
-                  setSelectedToken(token || null);
-                }}
-                disabled={loadingTokens || availableTokens.length === 0}
-                className="flex items-center gap-2 min-w-[100px] bg-transparent font-semibold outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {loadingTokens ? (
-                  <option>Loading...</option>
-                ) : availableTokens.length === 0 ? (
-                  <option>No tokens</option>
-                ) : (
-                  availableTokens.map((token) => (
-                    <option key={token.tokenIdentifier} value={token.tokenIdentifier}>
-                      {token.symbol}
-                    </option>
-                  ))
-                )}
-              </select>
-              <div className="flex-1 text-right text-2xl font-semibold text-gray-900 dark:text-gray-100">
-                {estimatedOutput > 0 ? estimatedOutput.toFixed(4) : "0.00"}
-              </div>
+              {isFlowToToken ? (
+                <>
+                  <select
+                    value={selectedToken?.tokenIdentifier || ""}
+                    onChange={(e) => {
+                      const token = availableTokens.find(
+                        (t) => t.tokenIdentifier === e.target.value
+                      );
+                      setSelectedToken(token || null);
+                    }}
+                    disabled={loadingTokens || availableTokens.length === 0}
+                    className="flex items-center gap-2 min-w-[100px] bg-transparent font-semibold outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {loadingTokens ? (
+                      <option>Loading...</option>
+                    ) : availableTokens.length === 0 ? (
+                      <option>No tokens</option>
+                    ) : (
+                      availableTokens.map((token) => (
+                        <option key={token.tokenIdentifier} value={token.tokenIdentifier}>
+                          {token.symbol}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <div className="flex-1 text-right text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                    {estimatedOutput > 0 ? estimatedOutput.toFixed(4) : "0.00"}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 min-w-[100px]">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00EF8B] to-[#00D9FF] flex items-center justify-center text-white font-bold text-sm">
+                      F
+                    </div>
+                    <span className="font-semibold">FLOW</span>
+                  </div>
+                  <div className="flex-1 text-right text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                    {estimatedOutput > 0 ? estimatedOutput.toFixed(4) : "0.00"}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -322,7 +397,7 @@ export function CreateDCAPlan() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">Investment per {selectedInterval.label.toLowerCase()}</span>
-                <span className="font-semibold">{amountPerInterval} FLOW</span>
+                <span className="font-semibold">{amountPerInterval} {fromToken}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">Total investments</span>
@@ -330,7 +405,7 @@ export function CreateDCAPlan() {
               </div>
               <div className="flex justify-between pt-2 border-t border-blue-200 dark:border-blue-800">
                 <span className="text-gray-900 dark:text-gray-100 font-medium">Total amount</span>
-                <span className="font-bold text-[#00EF8B]">{totalInvestment.toFixed(2)} FLOW</span>
+                <span className="font-bold text-[#00EF8B]">{totalInvestment.toFixed(2)} {fromToken}</span>
               </div>
             </div>
           </div>
@@ -343,7 +418,11 @@ export function CreateDCAPlan() {
               <div className="flex justify-between text-gray-600 dark:text-gray-400">
                 <span>Current price</span>
                 <span className="font-mono">
-                  1 FLOW ≈ {estimatedPrice.toFixed(4)} {selectedToken.symbol}
+                  {isFlowToToken ? (
+                    <>1 FLOW ≈ {estimatedPrice.toFixed(4)} {selectedToken.symbol}</>
+                  ) : (
+                    <>1 {selectedToken.symbol} ≈ {(1 / estimatedPrice).toFixed(4)} FLOW</>
+                  )}
                 </span>
               </div>
               <div className="flex justify-between text-gray-600 dark:text-gray-400">
