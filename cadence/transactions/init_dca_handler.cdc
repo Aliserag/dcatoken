@@ -51,6 +51,15 @@ transaction() {
 
         log("Entitled handler capability created for scheduler")
 
+        // Borrow handler to set the capability on itself (required for recursive scheduling)
+        let handlerRef = signer.storage.borrow<&DCATransactionHandler.Handler>(
+            from: /storage/DCATransactionHandler
+        ) ?? panic("Failed to borrow handler after storage")
+
+        handlerRef.setHandlerCapability(cap: handlerCapEntitled)
+
+        log("Handler capability configured for recursive scheduling")
+
         // Publish public capability for discoverability
         // This allows anyone to see the handler exists but not execute it
         let handlerCapPublic = signer.capabilities.storage

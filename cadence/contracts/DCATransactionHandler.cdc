@@ -68,11 +68,26 @@ access(all) contract DCATransactionHandler {
         /// This capability allows the handler to access and update plans
         access(self) let controllerCap: Capability<auth(DCAController.Owner) &DCAController.Controller>
 
+        /// Capability to the handler itself, used for recursive scheduling
+        /// This allows the handler to pass itself to schedule() calls
+        access(self) var handlerCap: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>?
+
         init(controllerCap: Capability<auth(DCAController.Owner) &DCAController.Controller>) {
             pre {
                 controllerCap.check(): "Invalid controller capability"
             }
             self.controllerCap = controllerCap
+            self.handlerCap = nil // Will be set after handler is stored
+        }
+
+        /// Set the handler capability after the handler has been stored
+        /// This must be called immediately after storing the handler
+        access(all) fun setHandlerCapability(cap: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>) {
+            pre {
+                cap.check(): "Invalid handler capability"
+                self.handlerCap == nil: "Handler capability already set"
+            }
+            self.handlerCap = cap
         }
 
         /// Main execution entrypoint called by FlowTransactionScheduler
@@ -176,10 +191,14 @@ access(all) contract DCATransactionHandler {
                 var nextScheduled = false
                 if planRef.status == DCAPlan.PlanStatus.Active && !planRef.hasReachedMaxExecutions() {
                     planRef.scheduleNextExecution()
-                    nextScheduled = true
 
-                    // TODO: In production, call FlowTransactionScheduler.schedule() here
-                    // to schedule the next execution. See CLAUDE.md for integration notes.
+                    // Attempt to schedule next execution via FlowTransactionScheduler
+                    let schedulingResult = self.scheduleNextExecution(
+                        planId: planId,
+                        nextExecutionTime: planRef.nextExecutionTime
+                    )
+
+                    nextScheduled = schedulingResult
                 }
 
                 emit HandlerExecutionCompleted(
@@ -297,6 +316,90 @@ access(all) contract DCATransactionHandler {
                 amountOut: actualAmountOut,
                 errorMessage: nil
             )
+        }
+
+        /// Schedule the next execution via FlowTransactionScheduler
+        ///
+        /// This function handles the recursive scheduling pattern:
+        /// 1. Estimate fees for next execution
+        /// 2. Borrow Manager from contract account storage
+        /// 3. Withdraw FLOW fees from user's controller
+        /// 4. Call manager.schedule() to schedule next execution
+        ///
+        /// @param planId: Plan ID to include in transaction data
+        /// @param nextExecutionTime: Timestamp for next execution
+        /// @return Bool indicating if scheduling succeeded
+        access(self) fun scheduleNextExecution(planId: UInt64, nextExecutionTime: UFix64): Bool {
+            // Verify handlerCap is set
+            if self.handlerCap == nil {
+                return false
+            }
+
+            // Prepare transaction data with plan ID
+            let transactionData: {String: UInt64} = {
+                "planId": planId
+            }
+
+            // Calculate delay in seconds from now
+            let now = getCurrentBlock().timestamp
+            let delaySeconds = UInt64(nextExecutionTime > now ? nextExecutionTime - now : 1.0)
+
+            // Estimate fees for the next execution
+            let estimatedFees = FlowTransactionScheduler.estimate(
+                handler: self.handlerCap!,
+                transactionData: transactionData,
+                delaySeconds: delaySeconds,
+                executionEffort: 9999  // High effort for DeFi swap operations
+            )
+
+            // Borrow the controller to access fee vault
+            let controller = self.controllerCap.borrow()
+            if controller == nil {
+                return false
+            }
+
+            // Get fee vault capability from controller
+            let feeVaultCap = controller!.getFeeVaultCapability()
+            if feeVaultCap == nil || !feeVaultCap!.check() {
+                return false
+            }
+
+            // Withdraw fees
+            let feeVault = feeVaultCap!.borrow()
+            if feeVault == nil {
+                return false
+            }
+
+            if feeVault!.balance < estimatedFees {
+                // Insufficient FLOW for fees
+                return false
+            }
+
+            let fees <- feeVault!.withdraw(amount: estimatedFees)
+
+            // Borrow Manager from contract account storage
+            // The Manager is stored in the DCATransactionHandler contract account
+            let managerRef = DCATransactionHandler.account.storage.borrow<auth(FlowTransactionScheduler.Owner) &FlowTransactionScheduler.Manager>(
+                from: /storage/FlowTransactionSchedulerManager
+            )
+
+            if managerRef == nil {
+                // Manager not available - destroy fees and return
+                destroy fees
+                return false
+            }
+
+            // Schedule the next execution
+            let scheduledId = managerRef!.schedule(
+                handler: self.handlerCap!,
+                transactionData: transactionData,
+                delaySeconds: delaySeconds,
+                executionEffort: 9999,
+                fees: <-fees
+            )
+
+            // scheduledId > 0 means success
+            return scheduledId > 0
         }
 
         /// Get supported view types (for resource metadata)

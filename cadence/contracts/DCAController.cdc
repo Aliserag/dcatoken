@@ -57,10 +57,15 @@ access(all) contract DCAController {
         /// This is used by scheduled handlers to deposit acquired tokens
         access(self) var targetVaultCap: Capability<&{FungibleToken.Receiver}>?
 
+        /// Capability to withdraw FLOW for scheduler fees
+        /// This is used by scheduled handlers to pay for autonomous execution
+        access(self) var feeVaultCap: Capability<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>?
+
         init() {
             self.plans <- {}
             self.sourceVaultCap = nil
             self.targetVaultCap = nil
+            self.feeVaultCap = nil
         }
 
         /// Set the source vault capability
@@ -101,6 +106,28 @@ access(all) contract DCAController {
         /// Get target vault capability (for scheduled handler)
         access(all) fun getTargetVaultCapability(): Capability<&{FungibleToken.Receiver}>? {
             return self.targetVaultCap
+        }
+
+        /// Set the fee vault capability
+        ///
+        /// This should be called once during setup to give the controller
+        /// permission to withdraw FLOW from the user's vault to pay scheduler fees.
+        ///
+        /// @param cap: Capability with withdraw auth to FLOW vault
+        access(all) fun setFeeVaultCapability(
+            cap: Capability<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>
+        ) {
+            pre {
+                cap.check(): "Invalid fee vault capability"
+            }
+            self.feeVaultCap = cap
+        }
+
+        /// Get fee vault capability (for scheduled handler)
+        ///
+        /// Returns capability to withdraw FLOW for scheduler execution fees.
+        access(all) fun getFeeVaultCapability(): Capability<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>? {
+            return self.feeVaultCap
         }
 
         /// Add a new plan to this controller
@@ -187,7 +214,9 @@ access(all) contract DCAController {
         access(all) view fun isFullyConfigured(): Bool {
             if let sourceCap = self.sourceVaultCap {
                 if let targetCap = self.targetVaultCap {
-                    return sourceCap.check() && targetCap.check()
+                    if let feeCap = self.feeVaultCap {
+                        return sourceCap.check() && targetCap.check() && feeCap.check()
+                    }
                 }
             }
             return false
