@@ -205,8 +205,8 @@ access(all) fun main(address: Address, planId: UInt64): DCAPlan.PlanDetails? {
  * @returns Array of token information including symbol, address, and liquidity
  */
 export const GET_FLOW_SWAPPABLE_TOKENS_SCRIPT = `
-import "SwapFactory"
-import "SwapInterfaces"
+import SwapFactory from 0xSwapFactory
+import SwapInterfaces from 0xSwapInterfaces
 
 access(all) struct TokenInfo {
     access(all) let symbol: String
@@ -330,7 +330,9 @@ access(all) fun getTokenSymbol(_ contractName: String): String {
         case "CowToken":
             return "COW"
         default:
-            return contractName.slice(from: 0, upTo: 4 < contractName.length ? 4 : contractName.length).toUpper()
+            // Return first 4 characters of contract name
+            let maxLen = 4 < contractName.length ? 4 : contractName.length
+            return contractName.slice(from: 0, upTo: maxLen)
     }
 }
 `;
