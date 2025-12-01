@@ -6,57 +6,72 @@ import SwapInterfaces from 0xb78ef7afa52ff906
 ///
 /// @returns Array of token details including symbol, address, and pool info
 access(all) fun main(): [TokenInfo] {
-    let flowTokenIdentifier = "A.0ae53cb6e3f42a79.FlowToken.Vault"
+    let flowTokenIdentifier = "A.1654653399040a61.FlowToken"
     let tokenInfos: [TokenInfo] = []
 
-    // Get all pairs from SwapFactory
-    let allPairInfos = SwapFactory.getAllPairsInfo()
+    // Get all pairs from SwapFactory using the correct API
+    let pairsCount = SwapFactory.getAllPairsLength()
 
-    for pairInfo in allPairInfos {
-        let token0 = pairInfo.token0Key.identity
-        let token1 = pairInfo.token1Key.identity
+    if pairsCount == 0 {
+        return []
+    }
+
+    // Limit to first 50 pairs to avoid potential issues with deprecated/migrated pairs
+    let limit: UInt64 = pairsCount > 50 ? 50 : UInt64(pairsCount)
+
+    // Get pair infos - returns array of arrays
+    // Each inner array has: [token0Key, token1Key, token0Reserve, token1Reserve, pairAddr, lpSupply, feeBps, isStable, curveP]
+    let allPairInfos = SwapFactory.getSlicedPairInfos(from: 0, to: limit - 1)
+
+    for pairInfoRaw in allPairInfos {
+        // Cast AnyStruct to array
+        // Format: [token0Key, token1Key, token0Reserve, token1Reserve, pairAddr, lpSupply, feeBps, isStable, curveP]
+        let pairInfo = pairInfoRaw as! [AnyStruct]
+
+        // Extract fields from array (indexes match the order from SwapFactory)
+        let token0 = (pairInfo[0] as! String)
+        let token1 = (pairInfo[1] as! String)
+        let token0Reserve = (pairInfo[2] as! UFix64)
+        let token1Reserve = (pairInfo[3] as! UFix64)
+        let pairAddr = (pairInfo[4] as! Address)
+        let isStableSwap = (pairInfo[7] as! Bool)
 
         // Check if either token is FLOW
         var targetToken: String? = nil
         var isToken0Flow = false
 
-        if token0 == flowTokenIdentifier {
+        if token0.slice(from: 0, upTo: token0.length).contains(flowTokenIdentifier) {
             targetToken = token1
             isToken0Flow = true
-        } else if token1 == flowTokenIdentifier {
+        } else if token1.slice(from: 0, upTo: token1.length).contains(flowTokenIdentifier) {
             targetToken = token0
             isToken0Flow = false
         }
 
         // If this pair has FLOW, add the other token to results
         if targetToken != nil {
-            let tokenKey = isToken0Flow ? pairInfo.token1Key : pairInfo.token0Key
-
             // Extract token name from identifier
-            // Format: A.{address}.{contract}.{resource}
-            let parts = self.splitString(targetToken!, separator: ".")
+            // Format: A.{address}.{contract} or A.{address}.{contract}.Vault
+            let parts = splitString(targetToken!, separator: ".")
             let tokenAddress = parts.length > 1 ? parts[1] : ""
             let tokenContract = parts.length > 2 ? parts[2] : ""
 
             // Determine symbol from contract name
-            let symbol = self.getTokenSymbol(tokenContract)
+            let symbol = getTokenSymbol(tokenContract)
 
             // Get liquidity info
-            let reserve0Str = pairInfo.token0Amount.toString()
-            let reserve1Str = pairInfo.token1Amount.toString()
-
-            let flowReserve = isToken0Flow ? reserve0Str : reserve1Str
-            let tokenReserve = isToken0Flow ? reserve1Str : reserve0Str
+            let flowReserve = isToken0Flow ? token0Reserve.toString() : token1Reserve.toString()
+            let tokenReserve = isToken0Flow ? token1Reserve.toString() : token0Reserve.toString()
 
             tokenInfos.append(TokenInfo(
                 symbol: symbol,
                 tokenAddress: tokenAddress,
                 tokenContract: tokenContract,
                 tokenIdentifier: targetToken!,
-                pairAddress: pairInfo.pairAddr,
+                pairAddress: pairAddr,
                 flowReserve: flowReserve,
                 tokenReserve: tokenReserve,
-                isStable: pairInfo.isStableSwap
+                isStable: isStableSwap
             ))
         }
     }
@@ -109,8 +124,9 @@ access(all) fun getTokenSymbol(_ contractName: String): String {
         case "CowToken":
             return "COW"
         default:
-            // Return first 4 uppercase letters of contract name
-            return contractName.slice(from: 0, upTo: 4 < contractName.length ? 4 : contractName.length).toUpper()
+            // Return first 4 characters of contract name
+            let maxLen = 4 < contractName.length ? 4 : contractName.length
+            return contractName.slice(from: 0, upTo: maxLen)
     }
 }
 
