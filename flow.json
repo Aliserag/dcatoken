@@ -220,11 +220,29 @@
 				"type": "file",
 				"location": "emulator-account.pkey"
 			}
+		},
+		"mainnet-deployer": {
+			"address": "ca7ee55e4fc3251a",
+			"key": {
+				"type": "hex",
+				"index": 0,
+				"signatureAlgorithm": "ECDSA_secp256k1",
+				"hashAlgorithm": "SHA2_256",
+				"privateKey": "bfd00d0021661a542cc5aa73d98901722f20e96999c331293a239c218210c257"
+			}
 		}
 	},
 	"deployments": {
 		"emulator": {
 			"emulator-account": [
+				"DeFiMath",
+				"DCAPlan",
+				"DCAController",
+				"DCATransactionHandler"
+			]
+		},
+		"mainnet": {
+			"mainnet-deployer": [
 				"DeFiMath",
 				"DCAPlan",
 				"DCAController",
