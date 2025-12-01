@@ -377,23 +377,15 @@ access(all) contract DCATransactionHandler {
 
             let fees <- feeVault!.withdraw(amount: estimatedFees)
 
-            // Borrow Manager from contract account storage
-            // The Manager is stored in the DCATransactionHandler contract account
-            let managerRef = DCATransactionHandler.account.storage.borrow<auth(FlowTransactionScheduler.Owner) &FlowTransactionScheduler.Manager>(
-                from: /storage/FlowTransactionSchedulerManager
-            )
-
-            if managerRef == nil {
-                // Manager not available - destroy fees and return
-                destroy fees
-                return false
-            }
-
-            // Schedule the next execution
-            let scheduledId = managerRef!.schedule(
-                handler: self.handlerCap!,
-                transactionData: transactionData,
-                delaySeconds: delaySeconds,
+            // Use scheduleByHandler() to schedule next execution
+            // This works because the handler was previously scheduled through the user's Manager
+            // The scheduler maintains the relationship between handlers and their originating Manager
+            let scheduledId = FlowTransactionScheduler.scheduleByHandler(
+                handlerTypeIdentifier: self.getType().identifier,
+                handlerUUID: self.uuid,
+                data: transactionData,
+                timestamp: nextExecutionTime,
+                priority: FlowTransactionScheduler.Priority.Medium,
                 executionEffort: 9999,
                 fees: <-fees
             )
