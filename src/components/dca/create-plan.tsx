@@ -77,13 +77,28 @@ export function CreateDCAPlan() {
 
       console.log("Fetched tokens from IncrementFi:", tokens);
 
-      // Filter tokens with at least 100 FLOW liquidity and sort by liquidity
-      const filteredTokens = filterByMinLiquidity(tokens, 100);
-      const sortedTokens = sortTokensByLiquidity(filteredTokens);
+      // Filter out USDC (mispriced pool) and keep USDT and other stablecoins
+      const excludedSymbols = ['USDC'];
+      const filteredByExclusion = tokens.filter(
+        token => !excludedSymbols.includes(token.symbol)
+      );
+
+      // Filter tokens with at least 100 FLOW liquidity
+      const filteredTokens = filterByMinLiquidity(filteredByExclusion, 100);
+
+      // Sort: USDT first (most accurate stable), then by liquidity
+      const sortedTokens = filteredTokens.sort((a, b) => {
+        // Prioritize USDT
+        if (a.symbol === 'USDT') return -1;
+        if (b.symbol === 'USDT') return 1;
+
+        // Then sort by FLOW liquidity
+        return parseFloat(b.flowReserve) - parseFloat(a.flowReserve);
+      });
 
       setAvailableTokens(sortedTokens);
 
-      // Auto-select first token if available
+      // Auto-select first token (should be USDT if available)
       if (sortedTokens.length > 0) {
         setSelectedToken(sortedTokens[0]);
       }
@@ -441,8 +456,8 @@ export function CreateDCAPlan() {
                 <span>~0.001 FLOW per swap</span>
               </div>
               <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
-                <p className="text-yellow-600 dark:text-yellow-500 text-xs">
-                  ⚠️ Estimate only. Actual execution prices may vary.
+                <p className="text-green-600 dark:text-green-500 text-xs">
+                  ✓ Using IncrementFi pool pricing (USDC excluded due to pool issues)
                 </p>
               </div>
             </div>
