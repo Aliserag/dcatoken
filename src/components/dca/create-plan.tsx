@@ -16,6 +16,7 @@ import {
   filterByMinLiquidity,
   getTokenDisplayName,
   getTokenColor,
+  getTokenLogoUrl,
 } from "@/lib/token-metadata";
 
 export function CreateDCAPlan() {
@@ -246,29 +247,24 @@ export function CreateDCAPlan() {
                 </>
               ) : (
                 <>
-                  <select
-                    value={selectedToken?.tokenIdentifier || ""}
-                    onChange={(e) => {
-                      const token = availableTokens.find(
-                        (t) => t.tokenIdentifier === e.target.value
-                      );
-                      setSelectedToken(token || null);
-                    }}
-                    disabled={loadingTokens || availableTokens.length === 0}
-                    className="flex items-center gap-2 min-w-[100px] bg-transparent font-semibold outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {loadingTokens ? (
-                      <option>Loading...</option>
-                    ) : availableTokens.length === 0 ? (
-                      <option>No tokens</option>
+                  <div className="flex items-center gap-2 min-w-[100px]">
+                    {selectedToken && getTokenLogoUrl(selectedToken.symbol) ? (
+                      <img
+                        src={getTokenLogoUrl(selectedToken.symbol)}
+                        alt={selectedToken.symbol}
+                        className="w-8 h-8 rounded-full"
+                        onError={(e) => {
+                          // Fallback to colored circle if logo fails to load
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
                     ) : (
-                      availableTokens.map((token) => (
-                        <option key={token.tokenIdentifier} value={token.tokenIdentifier}>
-                          {token.symbol}
-                        </option>
-                      ))
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#26A17B] to-[#1a7a5e] flex items-center justify-center text-white font-bold text-sm">
+                        {selectedToken?.symbol.charAt(0) || 'T'}
+                      </div>
                     )}
-                  </select>
+                    <span className="font-semibold">{selectedToken?.symbol || 'USDT'}</span>
+                  </div>
                   <input
                     type="number"
                     step="0.01"
@@ -316,29 +312,23 @@ export function CreateDCAPlan() {
             <div className="flex items-center gap-3 bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
               {isFlowToToken ? (
                 <>
-                  <select
-                    value={selectedToken?.tokenIdentifier || ""}
-                    onChange={(e) => {
-                      const token = availableTokens.find(
-                        (t) => t.tokenIdentifier === e.target.value
-                      );
-                      setSelectedToken(token || null);
-                    }}
-                    disabled={loadingTokens || availableTokens.length === 0}
-                    className="flex items-center gap-2 min-w-[100px] bg-transparent font-semibold outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {loadingTokens ? (
-                      <option>Loading...</option>
-                    ) : availableTokens.length === 0 ? (
-                      <option>No tokens</option>
+                  <div className="flex items-center gap-2 min-w-[100px]">
+                    {selectedToken && getTokenLogoUrl(selectedToken.symbol) ? (
+                      <img
+                        src={getTokenLogoUrl(selectedToken.symbol)}
+                        alt={selectedToken.symbol}
+                        className="w-8 h-8 rounded-full"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
                     ) : (
-                      availableTokens.map((token) => (
-                        <option key={token.tokenIdentifier} value={token.tokenIdentifier}>
-                          {token.symbol}
-                        </option>
-                      ))
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#26A17B] to-[#1a7a5e] flex items-center justify-center text-white font-bold text-sm">
+                        {selectedToken?.symbol.charAt(0) || 'T'}
+                      </div>
                     )}
-                  </select>
+                    <span className="font-semibold">{selectedToken?.symbol || 'USDT'}</span>
+                  </div>
                   <div className="flex-1 text-right text-2xl font-semibold text-gray-900 dark:text-gray-100">
                     {estimatedOutput > 0 ? estimatedOutput.toFixed(4) : "0.00"}
                   </div>
