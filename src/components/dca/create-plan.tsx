@@ -83,8 +83,8 @@ export function CreateDCAPlan() {
         token => !excludedSymbols.includes(token.symbol)
       );
 
-      // Filter tokens with at least 100 FLOW liquidity
-      const filteredTokens = filterByMinLiquidity(filteredByExclusion, 100);
+      // Filter tokens with at least 10 FLOW liquidity (lowered to include USDT and other tokens)
+      const filteredTokens = filterByMinLiquidity(filteredByExclusion, 10);
 
       // Sort: USDT first (most accurate stable), then by liquidity
       const sortedTokens = filteredTokens.sort((a, b) => {
