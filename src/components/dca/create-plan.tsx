@@ -182,11 +182,15 @@ export function CreateDCAPlan() {
     const slippageBps = Math.floor(parseFloat(slippage) * 100);
     const firstExecutionDelay = 300;
 
+    // Format amount to ensure it has decimal point for UFix64
+    // Convert "1" to "1.0", keep "1.5" as "1.5"
+    const formattedAmount = parseFloat(amountPerInterval).toFixed(2);
+
     // interval is already in seconds, pass directly to transaction
     const result = await executeTransaction(
       CREATE_PLAN_TX,
       (arg, t) => [
-        arg(amountPerInterval, t.UFix64),
+        arg(formattedAmount, t.UFix64),
         arg(interval, t.UInt64), // interval in seconds
         arg(slippageBps.toString(), t.UInt64),
         arg(maxExecutions || null, t.Optional(t.UInt64)),
