@@ -19,6 +19,8 @@ export const CONTRACTS = {
     FlowTransactionScheduler: "0xf8d6e0586b0a20c7",
     DeFiActions: "0xf8d6e0586b0a20c7",
     IncrementFiSwapConnectors: "0xf8d6e0586b0a20c7",
+    SwapFactory: "0xf8d6e0586b0a20c7",
+    SwapInterfaces: "0xf8d6e0586b0a20c7",
   },
   testnet: {
     DeFiMath: "", // To be deployed
@@ -30,6 +32,21 @@ export const CONTRACTS = {
     FlowTransactionScheduler: "0x8c5303eaa26202d6",
     DeFiActions: "0x4c2ff9dd03ab442f",
     IncrementFiSwapConnectors: "0x49bae091e5ea16b5",
+    SwapFactory: "0xb063c16cac85dbd1",
+    SwapInterfaces: "0xb78ef7afa52ff906",
+  },
+  mainnet: {
+    DeFiMath: "", // To be deployed
+    DCAPlan: "", // To be deployed
+    DCAController: "", // To be deployed
+    DCATransactionHandler: "", // To be deployed
+    FlowToken: "0x1654653399040a61",
+    FungibleToken: "0xf233dcee88fe0abe",
+    FlowTransactionScheduler: "0xe467b9dd11fa00df",
+    DeFiActions: "0x92195d814edf9cb0",
+    IncrementFiSwapConnectors: "0x49bae091e5ea16b5",
+    SwapFactory: "0xb063c16cac85dbd1",
+    SwapInterfaces: "0xb78ef7afa52ff906",
   },
 };
 
@@ -78,6 +95,23 @@ export const configureFCL = () => {
       "0xFlowTransactionScheduler": getContractAddress("FlowTransactionScheduler"),
       "0xDeFiActions": getContractAddress("DeFiActions"),
       "0xIncrementFiSwapConnectors": getContractAddress("IncrementFiSwapConnectors"),
+      "0xSwapFactory": getContractAddress("SwapFactory"),
+      "0xSwapInterfaces": getContractAddress("SwapInterfaces"),
+    });
+  } else if (NETWORK === "mainnet") {
+    fcl.config({
+      "app.detail.title": "Flow DCA",
+      "app.detail.icon": "https://placekitten.com/g/200/200", // TODO: Replace with actual logo
+      "flow.network": "mainnet",
+      "accessNode.api": "https://rest-mainnet.onflow.org",
+      "discovery.wallet": "https://fcl-discovery.onflow.org/authn",
+      "0xFlowToken": getContractAddress("FlowToken"),
+      "0xFungibleToken": getContractAddress("FungibleToken"),
+      "0xFlowTransactionScheduler": getContractAddress("FlowTransactionScheduler"),
+      "0xDeFiActions": getContractAddress("DeFiActions"),
+      "0xIncrementFiSwapConnectors": getContractAddress("IncrementFiSwapConnectors"),
+      "0xSwapFactory": getContractAddress("SwapFactory"),
+      "0xSwapInterfaces": getContractAddress("SwapInterfaces"),
     });
   }
 };
