@@ -313,8 +313,8 @@ access(all) fun splitString(_ str: String, separator: String): [String] {
     return parts
 }
 
-access(all) fun getTokenSymbol(_ contract: String): String {
-    switch contract {
+access(all) fun getTokenSymbol(_ contractName: String): String {
+    switch contractName {
         case "FlowToken":
             return "FLOW"
         case "FiatToken":
@@ -330,7 +330,7 @@ access(all) fun getTokenSymbol(_ contract: String): String {
         case "CowToken":
             return "COW"
         default:
-            return contract.slice(from: 0, upTo: 4 < contract.length ? 4 : contract.length).toUpper()
+            return contractName.slice(from: 0, upTo: 4 < contractName.length ? 4 : contractName.length).toUpper()
     }
 }
 `;

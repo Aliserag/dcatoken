@@ -91,9 +91,9 @@ access(all) fun splitString(_ str: String, separator: String): [String] {
 }
 
 /// Get human-readable symbol from contract name
-access(all) fun getTokenSymbol(_ contract: String): String {
+access(all) fun getTokenSymbol(_ contractName: String): String {
     // Map common contract names to symbols
-    switch contract {
+    switch contractName {
         case "FlowToken":
             return "FLOW"
         case "FiatToken":
@@ -110,7 +110,7 @@ access(all) fun getTokenSymbol(_ contract: String): String {
             return "COW"
         default:
             // Return first 4 uppercase letters of contract name
-            return contract.slice(from: 0, upTo: 4 < contract.length ? 4 : contract.length).toUpper()
+            return contractName.slice(from: 0, upTo: 4 < contractName.length ? 4 : contractName.length).toUpper()
     }
 }
 
