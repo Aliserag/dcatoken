@@ -13,6 +13,7 @@ export const SETUP_CONTROLLER_TX = `
 import "DCAController"
 import "FlowToken"
 import "FungibleToken"
+import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 transaction {
     prepare(signer: auth(Storage, Capabilities) &Account) {
@@ -36,19 +37,24 @@ transaction {
         )
         signer.capabilities.publish(cap, at: DCAController.ControllerPublicPath)
 
-        // Get Flow vault capability
-        let flowVaultCap = signer.capabilities
-            .get<&FlowToken.Vault>(/public/flowTokenReceiver)
-
-        // Borrow controller and set vault capability
+        // Borrow controller reference
         let controllerRef = signer.storage.borrow<&DCAController.Controller>(
             from: DCAController.ControllerStoragePath
         )!
 
-        controllerRef.setSourceVaultCapability(cap: flowVaultCap)
-        controllerRef.setTargetVaultCapability(cap: flowVaultCap)
+        // Configure source vault capability (USDT)
+        let sourceVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+            /storage/teleportedTetherTokenVault
+        )
+        controllerRef.setSourceVaultCapability(cap: sourceVaultCap)
 
-        log("DCA Controller setup complete")
+        // Configure target vault capability (FLOW)
+        let targetVaultCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
+            /storage/flowTokenVault
+        )
+        controllerRef.setTargetVaultCapability(cap: targetVaultCap)
+
+        log("DCA Controller setup complete for USDT → FLOW")
     }
 }
 `;
@@ -67,6 +73,7 @@ import "DCAPlan"
 import "DCAController"
 import "DeFiMath"
 import "FlowToken"
+import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 transaction(
     amountPerInterval: UFix64,
@@ -103,9 +110,9 @@ transaction(
         // Calculate first execution time
         let firstExecutionTime = getCurrentBlock().timestamp + UFix64(firstExecutionDelay)
 
-        // Create plan
+        // Create plan for USDT → FLOW swap
         let plan <- DCAPlan.createPlan(
-            sourceTokenType: Type<@FlowToken.Vault>(),
+            sourceTokenType: Type<@TeleportedTetherToken.Vault>(),
             targetTokenType: Type<@FlowToken.Vault>(),
             amountPerInterval: amountPerInterval,
             intervalSeconds: intervalSeconds,
@@ -119,7 +126,7 @@ transaction(
         // Add to controller
         self.controllerRef.addPlan(plan: <-plan)
 
-        log("Created DCA Plan #".concat(planId.toString()))
+        log("Created USDT → FLOW DCA Plan #".concat(planId.toString()))
     }
 }
 `;
