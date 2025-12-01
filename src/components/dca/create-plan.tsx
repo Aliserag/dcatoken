@@ -166,12 +166,12 @@ export function CreateDCAPlan() {
   };
 
   const intervalOptions = [
-    { value: "0.0166", label: "Minutely", hours: 1 / 60 },
-    { value: "1", label: "Hourly", hours: 1 },
-    { value: "4", label: "Every 4 Hours", hours: 4 },
-    { value: "12", label: "Every 12 Hours", hours: 12 },
-    { value: "24", label: "Daily", hours: 24 },
-    { value: "168", label: "Weekly", hours: 168 },
+    { value: "0.0166", label: "Minutely", perLabel: "minute", hours: 1 / 60 },
+    { value: "1", label: "Hourly", perLabel: "hour", hours: 1 },
+    { value: "4", label: "Every 4 Hours", perLabel: "4 hours", hours: 4 },
+    { value: "12", label: "Every 12 Hours", perLabel: "12 hours", hours: 12 },
+    { value: "24", label: "Daily", perLabel: "day", hours: 24 },
+    { value: "168", label: "Weekly", perLabel: "week", hours: 168 },
   ];
 
   // Calculate total investment and estimated output
@@ -223,7 +223,7 @@ export function CreateDCAPlan() {
           <div className="space-y-2">
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-600 dark:text-gray-400">You invest</span>
-              <span className="text-xs text-gray-500">Per {selectedInterval.label.toLowerCase()}</span>
+              <span className="text-xs text-gray-500">Per {selectedInterval.perLabel}</span>
             </div>
             <div className="flex items-center gap-3 bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
               {isFlowToToken ? (
@@ -422,7 +422,7 @@ export function CreateDCAPlan() {
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">Investment per {selectedInterval.label.toLowerCase()}</span>
+                <span className="text-gray-600 dark:text-gray-400">Investment per {selectedInterval.perLabel}</span>
                 <span className="font-semibold">{amountPerInterval} {fromToken}</span>
               </div>
               <div className="flex justify-between">
