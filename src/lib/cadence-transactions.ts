@@ -88,7 +88,7 @@ transaction {
  * Create DCA Plan
  *
  * @param amountPerInterval - Amount of FLOW per interval (UFix64)
- * @param intervalDays - Days between executions (UInt64)
+ * @param intervalSeconds - Seconds between executions (UInt64)
  * @param maxSlippageBps - Max slippage in basis points (UInt64, e.g. 100 = 1%)
  * @param maxExecutions - Optional max executions (UInt64? or nil)
  * @param firstExecutionDelay - Seconds until first execution (UInt64)
@@ -102,7 +102,7 @@ import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 transaction(
     amountPerInterval: UFix64,
-    intervalDays: UInt64,
+    intervalSeconds: UInt64,
     maxSlippageBps: UInt64,
     maxExecutions: UInt64?,
     firstExecutionDelay: UInt64
@@ -125,12 +125,9 @@ transaction(
     execute {
         // Validate inputs
         assert(amountPerInterval > 0.0, message: "Amount must be positive")
-        assert(intervalDays > 0, message: "Interval must be positive")
+        assert(intervalSeconds > 0, message: "Interval must be positive")
         assert(DeFiMath.isValidSlippage(slippageBps: maxSlippageBps), message: "Invalid slippage")
         assert(firstExecutionDelay > 0, message: "Delay must be positive")
-
-        // Convert interval to seconds
-        let intervalSeconds = intervalDays * 86400
 
         // Calculate first execution time
         let firstExecutionTime = getCurrentBlock().timestamp + UFix64(firstExecutionDelay)

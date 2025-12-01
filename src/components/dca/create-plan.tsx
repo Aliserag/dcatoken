@@ -23,7 +23,7 @@ import {
 export function CreateDCAPlan() {
   const [userAddress, setUserAddress] = useState<string | null>(null);
   const [amountPerInterval, setAmountPerInterval] = useState("");
-  const [interval, setInterval] = useState("168"); // Default to Weekly
+  const [interval, setInterval] = useState("604800"); // Default to Weekly (604800 seconds)
   const [slippage, setSlippage] = useState("1");
   const [maxExecutions, setMaxExecutions] = useState("");
   const [controllerConfigured, setControllerConfigured] = useState(false);
@@ -182,11 +182,12 @@ export function CreateDCAPlan() {
     const slippageBps = Math.floor(parseFloat(slippage) * 100);
     const firstExecutionDelay = 300;
 
+    // interval is already in seconds, pass directly to transaction
     const result = await executeTransaction(
       CREATE_PLAN_TX,
       (arg, t) => [
         arg(amountPerInterval, t.UFix64),
-        arg(interval, t.UInt64),
+        arg(interval, t.UInt64), // interval in seconds
         arg(slippageBps.toString(), t.UInt64),
         arg(maxExecutions || null, t.Optional(t.UInt64)),
         arg(firstExecutionDelay.toString(), t.UInt64),
@@ -209,12 +210,12 @@ export function CreateDCAPlan() {
   };
 
   const intervalOptions = [
-    { value: "0.0166", label: "Minutely", perLabel: "minute", hours: 1 / 60 },
-    { value: "1", label: "Hourly", perLabel: "hour", hours: 1 },
-    { value: "4", label: "Every 4 Hours", perLabel: "4 hours", hours: 4 },
-    { value: "12", label: "Every 12 Hours", perLabel: "12 hours", hours: 12 },
-    { value: "24", label: "Daily", perLabel: "day", hours: 24 },
-    { value: "168", label: "Weekly", perLabel: "week", hours: 168 },
+    { value: "60", label: "Minutely", perLabel: "minute", seconds: 60 },
+    { value: "3600", label: "Hourly", perLabel: "hour", seconds: 3600 },
+    { value: "14400", label: "Every 4 Hours", perLabel: "4 hours", seconds: 14400 },
+    { value: "43200", label: "Every 12 Hours", perLabel: "12 hours", seconds: 43200 },
+    { value: "86400", label: "Daily", perLabel: "day", seconds: 86400 },
+    { value: "604800", label: "Weekly", perLabel: "week", seconds: 604800 },
   ];
 
   // Calculate total investment and estimated output
