@@ -43,22 +43,48 @@ interface CadencePlanDetails {
 }
 
 // Countdown component for next execution
-function CountdownTimer({ targetTimestamp }: { targetTimestamp: string }) {
+function CountdownTimer({
+  targetTimestamp,
+  onCountdownComplete,
+  planStatus
+}: {
+  targetTimestamp: string;
+  onCountdownComplete?: () => void;
+  planStatus?: "active" | "paused" | "completed";
+}) {
   const [timeLeft, setTimeLeft] = useState<{
     days: number;
     hours: number;
     minutes: number;
     seconds: number;
   } | null>(null);
+  const [hasTriggered, setHasTriggered] = useState(false);
 
   useEffect(() => {
     const calculateTimeLeft = () => {
-      const targetTime = parseFloat(targetTimestamp) * 1000; // Convert to milliseconds
+      const timestampNum = parseFloat(targetTimestamp);
+
+      // Handle invalid timestamps (completed plans, etc.)
+      if (isNaN(timestampNum) || timestampNum <= 0) {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+        return;
+      }
+
+      const targetTime = timestampNum * 1000; // Convert to milliseconds
       const now = Date.now();
       const difference = targetTime - now;
 
       if (difference <= 0) {
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+        // Trigger callback once when countdown hits zero
+        if (!hasTriggered && onCountdownComplete) {
+          setHasTriggered(true);
+          // Wait 5 seconds after execution time to allow for blockchain confirmation
+          setTimeout(() => {
+            onCountdownComplete();
+          }, 5000);
+        }
         return;
       }
 
@@ -77,12 +103,32 @@ function CountdownTimer({ targetTimestamp }: { targetTimestamp: string }) {
     const interval = setInterval(calculateTimeLeft, 1000);
 
     return () => clearInterval(interval);
+  }, [targetTimestamp, hasTriggered, onCountdownComplete]);
+
+  // Reset trigger when timestamp changes (new execution scheduled)
+  useEffect(() => {
+    setHasTriggered(false);
   }, [targetTimestamp]);
 
   if (!timeLeft) return <span className="text-sm text-gray-500">Loading...</span>;
 
   if (timeLeft.days === 0 && timeLeft.hours === 0 && timeLeft.minutes === 0 && timeLeft.seconds === 0) {
-    return <span className="text-sm text-[#00EF8B]">Ready to execute</span>;
+    // Show different message based on plan status
+    if (planStatus === "completed") {
+      return <span className="text-sm text-gray-500">Plan completed</span>;
+    }
+    if (planStatus === "paused") {
+      return <span className="text-sm text-yellow-500">Paused</span>;
+    }
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-[#00EF8B]">Executing...</span>
+        <svg className="animate-spin h-4 w-4 text-[#00EF8B]" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      </div>
+    );
   }
 
   return (
@@ -124,6 +170,17 @@ export function DCADashboard() {
 
     return () => unsubscribe();
   }, []);
+
+  // Auto-refresh plans every 15 seconds to detect new executions
+  useEffect(() => {
+    if (!userAddress) return;
+
+    const intervalId = setInterval(() => {
+      fetchPlans(userAddress);
+    }, 15000); // Refresh every 15 seconds
+
+    return () => clearInterval(intervalId);
+  }, [userAddress]);
 
   const fetchPlans = async (address: string) => {
     setLoading(true);
@@ -167,15 +224,23 @@ export function DCADashboard() {
           ).toFixed(4); // Use 4 decimals for better precision
         }
 
-        // Format next execution time
-        const nextExecutionTime = new Date(
-          parseFloat(cp.nextExecutionTime) * 1000
-        );
-        const nextExecution = nextExecutionTime.toISOString().split("T")[0];
+        // Format next execution time (handle invalid/null timestamps for completed plans)
+        const nextExecutionTimestamp = parseFloat(cp.nextExecutionTime);
+        const nextExecutionTime = !isNaN(nextExecutionTimestamp) && nextExecutionTimestamp > 0
+          ? new Date(nextExecutionTimestamp * 1000)
+          : null;
+        const nextExecution = nextExecutionTime && !isNaN(nextExecutionTime.getTime())
+          ? nextExecutionTime.toISOString().split("T")[0]
+          : "N/A";
 
         // Format created at time
-        const createdAtTime = new Date(parseFloat(cp.createdAt) * 1000);
-        const createdAt = createdAtTime.toISOString().split("T")[0];
+        const createdAtTimestamp = parseFloat(cp.createdAt);
+        const createdAtTime = !isNaN(createdAtTimestamp) && createdAtTimestamp > 0
+          ? new Date(createdAtTimestamp * 1000)
+          : new Date();
+        const createdAt = !isNaN(createdAtTime.getTime())
+          ? createdAtTime.toISOString().split("T")[0]
+          : "N/A";
 
         return {
           id: parseInt(cp.id, 10),
@@ -596,7 +661,15 @@ export function DCADashboard() {
                       <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
                         Next Execution
                       </p>
-                      <CountdownTimer targetTimestamp={plan.nextExecution} />
+                      <CountdownTimer
+                        targetTimestamp={plan.nextExecution}
+                        planStatus={plan.status}
+                        onCountdownComplete={() => {
+                          if (userAddress) {
+                            fetchPlans(userAddress);
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
