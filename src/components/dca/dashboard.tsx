@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import * as fcl from "@onflow/fcl";
-import { GET_ALL_PLANS_SCRIPT, PAUSE_PLAN_TX, RESUME_PLAN_TX, INIT_DCA_HANDLER_TX, SCHEDULE_DCA_PLAN_TX } from "@/lib/cadence-transactions";
+import { GET_ALL_PLANS_SCRIPT, PAUSE_PLAN_TX, RESUME_PLAN_TX, INIT_DCA_HANDLER_TX, SCHEDULE_DCA_PLAN_TX, FUND_FEE_VAULT_TX } from "@/lib/cadence-transactions";
 import { useTransaction } from "@/hooks/use-transaction";
 
 interface DCAPlan {
@@ -194,7 +194,15 @@ export function DCADashboard() {
         };
       });
 
-      setPlans(transformedPlans);
+      // Sort plans by most recent first (based on createdAt timestamp)
+      const sortedPlans = transformedPlans.sort((a, b) => {
+        // Parse createdAt timestamps and sort descending (newest first)
+        const timeA = new Date(a.createdAt).getTime();
+        const timeB = new Date(b.createdAt).getTime();
+        return timeB - timeA;
+      });
+
+      setPlans(sortedPlans);
     } catch (err: any) {
       console.error("Error fetching plans:", err);
       setError(err.message || "Failed to fetch plans");
@@ -263,10 +271,29 @@ export function DCADashboard() {
     }
   };
 
-  const handleSchedulePlan = async (planId: number, intervalSeconds: number) => {
+  const handleSchedulePlan = async (planId: number, intervalSeconds: number, maxExecutions: number | null) => {
     // Use interval as delay for first execution
     const delaySeconds = intervalSeconds.toString() + ".0";
+    const numExecutions = maxExecutions || 1000; // Default to 1000 if unlimited
 
+    // First, fund the fee vault
+    const fundResult = await executeTransaction(
+      FUND_FEE_VAULT_TX,
+      (arg, t) => [
+        arg(planId.toString(), t.UInt64),
+        arg(numExecutions.toString(), t.UInt64),
+        arg(delaySeconds, t.UFix64),
+        arg("1", t.UInt8), // Priority: Medium
+        arg("5000", t.UInt64) // Execution effort
+      ],
+      500
+    );
+
+    if (!fundResult.success) {
+      alert(`Failed to fund fee vault: ${fundResult.error}. Scheduling may fail.`);
+    }
+
+    // Then schedule the plan
     const result = await executeTransaction(
       SCHEDULE_DCA_PLAN_TX,
       (arg, t) => [
@@ -454,7 +481,7 @@ export function DCADashboard() {
                       </span>
                       {plan.status === "active" && !plan.isScheduled && (
                         <button
-                          onClick={() => handleSchedulePlan(plan.id, plan.intervalSeconds)}
+                          onClick={() => handleSchedulePlan(plan.id, plan.intervalSeconds, plan.maxExecutions)}
                           className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-lg text-sm font-medium transition-colors cursor-pointer"
                         >
                           Schedule

@@ -11,6 +11,7 @@ import {
   GET_TOKEN_BALANCE_SCRIPT,
   INIT_DCA_HANDLER_TX,
   SCHEDULE_DCA_PLAN_TX,
+  FUND_FEE_VAULT_TX,
 } from "@/lib/cadence-transactions";
 import { TransactionStatus } from "@/config/fcl-config";
 import type { TokenInfo } from "@/lib/token-metadata";
@@ -241,8 +242,27 @@ export function CreateDCAPlan() {
             if (handlerResult.success) {
               setHandlerInitialized(true);
 
-              // Now schedule the plan
+              // Fund fee vault with enough FLOW for all executions
+              const numExecutions = maxExecutions || "1000"; // Default to 1000 if unlimited
               const delaySeconds = interval + ".0";
+
+              const fundResult = await executeTransaction(
+                FUND_FEE_VAULT_TX,
+                (arg, t) => [
+                  arg(planId, t.UInt64),
+                  arg(numExecutions, t.UInt64),
+                  arg(delaySeconds, t.UFix64),
+                  arg("1", t.UInt8), // Priority: Medium
+                  arg("5000", t.UInt64) // Execution effort
+                ],
+                500
+              );
+
+              if (!fundResult.success) {
+                alert(`Failed to fund fee vault: ${fundResult.error}. Scheduling may fail.`);
+              }
+
+              // Now schedule the plan
               const scheduleResult = await executeTransaction(
                 SCHEDULE_DCA_PLAN_TX,
                 (arg, t) => [
@@ -269,9 +289,28 @@ export function CreateDCAPlan() {
             resetTransaction();
           }, 1000);
         } else {
-          // Handler already initialized, just schedule
+          // Handler already initialized, fund fee vault then schedule
           setTimeout(async () => {
             const delaySeconds = interval + ".0";
+
+            // Fund fee vault with enough FLOW for all executions
+            const numExecutions = maxExecutions || "1000"; // Default to 1000 if unlimited
+
+            const fundResult = await executeTransaction(
+              FUND_FEE_VAULT_TX,
+              (arg, t) => [
+                arg(planId, t.UInt64),
+                arg(numExecutions, t.UInt64),
+                arg(delaySeconds, t.UFix64),
+                arg("1", t.UInt8), // Priority: Medium
+                arg("5000", t.UInt64) // Execution effort
+              ],
+              500
+            );
+
+            if (!fundResult.success) {
+              alert(`Failed to fund fee vault: ${fundResult.error}. Scheduling may fail.`);
+            }
 
             const scheduleResult = await executeTransaction(
               SCHEDULE_DCA_PLAN_TX,

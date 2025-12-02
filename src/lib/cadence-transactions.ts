@@ -791,3 +791,161 @@ transaction(
  */
 import { NETWORK } from "../config/fcl-config";
 export const SCHEDULE_DCA_PLAN_TX = NETWORK === "mainnet" ? SCHEDULE_DCA_PLAN_TX_V2 : SCHEDULE_DCA_PLAN_TX_V1;
+
+/**
+ * Fund Fee Vault with FLOW for Scheduled Executions
+ *
+ * Estimates the fee for a single execution and deposits (numExecutions * fee) into the fee vault.
+ * This ensures there's enough FLOW to pay for all scheduled transaction fees.
+ *
+ * @param planId - The plan ID to schedule
+ * @param numExecutions - Number of planned executions (e.g., 10 for a plan with maxExecutions=10)
+ * @param delaySeconds - Seconds until first execution (for fee estimation)
+ * @param priority - Priority level (0=High, 1=Medium, 2=Low)
+ * @param executionEffort - Execution effort estimate
+ */
+export const FUND_FEE_VAULT_TX_V2 = `
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+import FlowTransactionSchedulerUtils from 0xFlowTransactionSchedulerUtils
+import DCATransactionHandlerV2 from 0xDCATransactionHandler
+import DCAControllerV2 from 0xDCAController
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
+
+transaction(planId: UInt64, numExecutions: UInt64, delaySeconds: UFix64, priority: UInt8, executionEffort: UInt64) {
+    let flowVault: auth(FungibleToken.Withdraw) &FlowToken.Vault
+    let controllerRef: &DCAControllerV2.Controller
+
+    prepare(signer: auth(Storage) &Account) {
+        // Borrow FLOW vault
+        self.flowVault = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
+            from: /storage/flowTokenVault
+        ) ?? panic("Could not borrow FLOW vault")
+
+        // Borrow DCA controller
+        self.controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
+            from: DCAControllerV2.ControllerStoragePath
+        ) ?? panic("Could not borrow DCA controller")
+    }
+
+    execute {
+        // Get Manager capability from controller
+        let managerCap = signer.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+            FlowTransactionSchedulerUtils.ManagerStoragePath
+        )
+
+        // Convert priority to enum
+        let pr = priority == 0 ? FlowTransactionScheduler.Priority.High :
+                 priority == 1 ? FlowTransactionScheduler.Priority.Medium :
+                 FlowTransactionScheduler.Priority.Low
+
+        // Create schedule config
+        let scheduleConfig = DCATransactionHandlerV2.ScheduleConfig(
+            schedulerManagerCap: managerCap,
+            priority: pr,
+            executionEffort: executionEffort
+        )
+
+        // Prepare transaction data for estimation
+        let transactionData = DCATransactionHandlerV2.DCATransactionData(
+            planId: planId,
+            scheduleConfig: scheduleConfig
+        )
+
+        // Calculate first execution time
+        let firstExecutionTime = getCurrentBlock().timestamp + delaySeconds
+
+        // Estimate fee for ONE execution
+        let estimate = FlowTransactionScheduler.estimate(
+            data: transactionData,
+            timestamp: firstExecutionTime,
+            priority: pr,
+            executionEffort: executionEffort
+        )
+
+        // Get single execution fee
+        let singleFee = estimate.flowFee ?? 0.0
+
+        // Calculate total fee needed for all executions
+        // Add 10% buffer for potential fee variations
+        let totalFeeNeeded = singleFee * UFix64(numExecutions) * 1.1
+
+        // Check if user has enough FLOW
+        assert(
+            self.flowVault.balance >= totalFeeNeeded,
+            message: "Insufficient FLOW balance. Need ".concat(totalFeeNeeded.toString()).concat(" FLOW for ").concat(numExecutions.toString()).concat(" executions, have ").concat(self.flowVault.balance.toString())
+        )
+
+        // Withdraw FLOW from user's vault
+        let feeDeposit <- self.flowVault.withdraw(amount: totalFeeNeeded)
+
+        // Get fee vault capability from controller
+        let feeVaultCap = self.controllerRef.getFeeVaultCapability()
+            ?? panic("Fee vault capability not configured")
+
+        // Borrow fee vault and deposit
+        let feeVault = feeVaultCap.borrow()
+            ?? panic("Could not borrow fee vault")
+
+        feeVault.deposit(from: <-feeDeposit)
+
+        log("Deposited ".concat(totalFeeNeeded.toString()).concat(" FLOW into fee vault for ").concat(numExecutions.toString()).concat(" executions (").concat(singleFee.toString()).concat(" per execution + 10% buffer)"))
+    }
+}
+`;
+
+// V1 version (for emulator/testnet) - simpler without Manager pattern
+export const FUND_FEE_VAULT_TX_V1 = `
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+import DCATransactionHandler from 0xDCATransactionHandler
+import DCAController from 0xDCAController
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
+
+transaction(planId: UInt64, numExecutions: UInt64, delaySeconds: UFix64, priority: UInt8, executionEffort: UInt64) {
+    let flowVault: auth(FungibleToken.Withdraw) &FlowToken.Vault
+    let controllerRef: &DCAController.Controller
+
+    prepare(signer: auth(Storage) &Account) {
+        // Borrow FLOW vault
+        self.flowVault = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
+            from: /storage/flowTokenVault
+        ) ?? panic("Could not borrow FLOW vault")
+
+        // Borrow DCA controller
+        self.controllerRef = signer.storage.borrow<&DCAController.Controller>(
+            from: DCAController.ControllerStoragePath
+        ) ?? panic("Could not borrow DCA controller")
+    }
+
+    execute {
+        // Estimate a conservative fee amount
+        // On emulator/testnet, fees are typically very low or zero
+        // Use a small buffer amount
+        let estimatedSingleFee = 0.01 // Conservative estimate
+        let totalFeeNeeded = estimatedSingleFee * UFix64(numExecutions) * 1.1
+
+        // Check if user has enough FLOW
+        if self.flowVault.balance >= totalFeeNeeded {
+            // Withdraw FLOW from user's vault
+            let feeDeposit <- self.flowVault.withdraw(amount: totalFeeNeeded)
+
+            // Get fee vault capability from controller
+            let feeVaultCap = self.controllerRef.getFeeVaultCapability()
+                ?? panic("Fee vault capability not configured")
+
+            // Borrow fee vault and deposit
+            let feeVault = feeVaultCap.borrow()
+                ?? panic("Could not borrow fee vault")
+
+            feeVault.deposit(from: <-feeDeposit)
+
+            log("Deposited ".concat(totalFeeNeeded.toString()).concat(" FLOW into fee vault for ").concat(numExecutions.toString()).concat(" executions"))
+        } else {
+            log("Skipping fee deposit - insufficient FLOW balance or fees not required on this network")
+        }
+    }
+}
+`;
+
+export const FUND_FEE_VAULT_TX = NETWORK === "mainnet" ? FUND_FEE_VAULT_TX_V2 : FUND_FEE_VAULT_TX_V1;
