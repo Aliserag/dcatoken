@@ -112,6 +112,7 @@ function CountdownTimer({
 
   if (!timeLeft) return <span className="text-sm text-gray-500">Loading...</span>;
 
+  // Handle zero countdown differently based on context
   if (timeLeft.days === 0 && timeLeft.hours === 0 && timeLeft.minutes === 0 && timeLeft.seconds === 0) {
     // Show different message based on plan status
     if (planStatus === "completed") {
@@ -120,6 +121,8 @@ function CountdownTimer({
     if (planStatus === "paused") {
       return <span className="text-sm text-yellow-500">Paused</span>;
     }
+
+    // Plan is active - show executing state
     return (
       <div className="flex items-center gap-2">
         <span className="text-sm text-[#00EF8B]">Executing...</span>

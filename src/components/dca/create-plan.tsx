@@ -264,7 +264,7 @@ export function CreateDCAPlan() {
               );
 
               if (fundAndScheduleResult.success) {
-                alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}.`);
+                alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}. Check the Dashboard to monitor progress.`);
               } else {
                 alert(`Handler initialized but funding/scheduling failed. Error: ${fundAndScheduleResult.error}`);
               }
@@ -296,7 +296,7 @@ export function CreateDCAPlan() {
             );
 
             if (fundAndScheduleResult.success) {
-              alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}.`);
+              alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}. Check the Dashboard to monitor progress.`);
             } else {
               alert(`Plan #${planId} created but funding/scheduling failed. ${fundAndScheduleResult.error}`);
             }
