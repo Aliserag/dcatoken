@@ -1126,6 +1126,98 @@ transaction(planId: UInt64, numExecutions: UInt64, delaySeconds: UFix64, priorit
 }
 `;
 
+/**
+ * Migrate from V1 to V2 Controller (Mainnet Only)
+ *
+ * This transaction removes the old V1 controller and creates a fresh V2 controller.
+ * IMPORTANT: This will destroy any existing plans. Only use if you're okay losing existing data.
+ */
+export const MIGRATE_CONTROLLER_V1_TO_V2 = `
+import DCAControllerV2 from 0xDCAController
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
+import EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14 from 0x1e4aa0b87d10b141
+
+transaction {
+    prepare(signer: auth(Storage, Capabilities) &Account) {
+        // Remove old V1 controller if it exists (this will destroy it)
+        if let oldController <- signer.storage.load<@AnyResource>(from: DCAControllerV2.ControllerStoragePath) {
+            destroy oldController
+            log("Removed old controller")
+        }
+
+        // Unpublish old capabilities
+        signer.capabilities.unpublish(DCAControllerV2.ControllerPublicPath)
+
+        // Initialize EVM bridged token vault if it doesn't exist
+        let vaultStoragePath = /storage/evmVMBridgedTokenVault_f1815bd50389c46847f0bda824ec8da914045d14
+        let vaultPublicPath = /public/evmVMBridgedTokenBalance_f1815bd50389c46847f0bda824ec8da914045d14
+        let vaultReceiverPath = /public/evmVMBridgedTokenReceiver_f1815bd50389c46847f0bda824ec8da914045d14
+
+        if signer.storage.borrow<&EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(
+            from: vaultStoragePath
+        ) == nil {
+            // Create empty EVM bridged token vault
+            let evmVault <- EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.createEmptyVault(vaultType: Type<@EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>())
+
+            // Save vault to storage
+            signer.storage.save(<-evmVault, to: vaultStoragePath)
+
+            // Create public receiver capability
+            let receiverCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
+                vaultStoragePath
+            )
+            signer.capabilities.publish(receiverCap, at: vaultReceiverPath)
+
+            // Create public balance capability
+            let balanceCap = signer.capabilities.storage.issue<&EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(
+                vaultStoragePath
+            )
+            signer.capabilities.publish(balanceCap, at: vaultPublicPath)
+
+            log("EVM bridged token vault initialized")
+        }
+
+        // Create NEW V2 controller
+        let controller <- DCAControllerV2.createController()
+
+        // Store controller at same path
+        signer.storage.save(<-controller, to: DCAControllerV2.ControllerStoragePath)
+
+        // Create public capability
+        let cap = signer.capabilities.storage.issue<&DCAControllerV2.Controller>(
+            DCAControllerV2.ControllerStoragePath
+        )
+        signer.capabilities.publish(cap, at: DCAControllerV2.ControllerPublicPath)
+
+        // Borrow controller reference
+        let controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
+            from: DCAControllerV2.ControllerStoragePath
+        )!
+
+        // Configure source vault capability (EVM bridged token)
+        let sourceVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+            vaultStoragePath
+        )
+        controllerRef.setSourceVaultCapability(cap: sourceVaultCap)
+
+        // Configure target vault capability (FLOW)
+        let targetVaultCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
+            /storage/flowTokenVault
+        )
+        controllerRef.setTargetVaultCapability(cap: targetVaultCap)
+
+        // Configure fee vault capability (FLOW) for scheduler fees
+        let feeVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+            /storage/flowTokenVault
+        )
+        controllerRef.setFeeVaultCapability(cap: feeVaultCap)
+
+        log("Successfully migrated to V2 controller")
+    }
+}
+`;
+
 // Conditional exports based on network
 export const SETUP_CONTROLLER_TX = NETWORK === "mainnet" ? SETUP_CONTROLLER_TX_V2 : SETUP_CONTROLLER_TX_V1;
 export const CREATE_PLAN_TX = NETWORK === "mainnet" ? CREATE_PLAN_TX_V2 : CREATE_PLAN_TX_V1;
