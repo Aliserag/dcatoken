@@ -732,15 +732,15 @@ transaction(
             FlowTransactionSchedulerUtils.managerStoragePath
         )
 
-        // Create ScheduleConfig for autonomous rescheduling
-        let scheduleConfig = DCATransactionHandler.createScheduleConfig(
+        // Create ScheduleConfig struct inline (for autonomous rescheduling)
+        let scheduleConfig = DCATransactionHandler.ScheduleConfig(
             schedulerManagerCap: managerCap,
             priority: pr,
             executionEffort: executionEffort
         )
 
         // Prepare transaction data with plan ID and schedule config
-        let transactionData = DCATransactionHandler.createTransactionData(
+        let transactionData = DCATransactionHandler.DCATransactionData(
             planId: planId,
             scheduleConfig: scheduleConfig
         )
