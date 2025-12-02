@@ -273,7 +273,7 @@ export function DCADashboard() {
         arg(planId.toString(), t.UInt64),
         arg(delaySeconds, t.UFix64),
         arg("1", t.UInt8), // Priority: Medium
-        arg("9999", t.UInt64) // Execution effort
+        arg("5000", t.UInt64) // Execution effort (max 7500 for Medium priority)
       ],
       500
     );
@@ -315,7 +315,7 @@ export function DCADashboard() {
           </p>
           <p className="text-3xl font-bold font-mono">
             {totalInvested.toFixed(2)}{" "}
-            <span className="text-lg text-gray-500">FLOW</span>
+            <span className="text-lg text-gray-500">USDC</span>
           </p>
         </div>
 
@@ -325,7 +325,7 @@ export function DCADashboard() {
           </p>
           <p className="text-3xl font-bold font-mono">
             {totalAcquired.toFixed(2)}{" "}
-            <span className="text-lg text-gray-500">Tokens</span>
+            <span className="text-lg text-gray-500">FLOW</span>
           </p>
         </div>
       </div>
@@ -439,7 +439,7 @@ export function DCADashboard() {
                       <div>
                         <h3 className="text-xl font-bold">Plan #{plan.id}</h3>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {plan.amount} FLOW · {plan.frequency}
+                          {plan.amount} USDC · {plan.frequency}
                         </p>
                       </div>
                     </div>
@@ -514,7 +514,7 @@ export function DCADashboard() {
                       <p className="text-lg font-bold font-mono">
                         {plan.totalInvested}
                         <span className="text-sm text-gray-500 ml-1">
-                          FLOW
+                          USDC
                         </span>
                       </p>
                     </div>
@@ -525,7 +525,7 @@ export function DCADashboard() {
                       </p>
                       <p className="text-lg font-bold font-mono">
                         {plan.totalAcquired}
-                        <span className="text-sm text-gray-500 ml-1">TKN</span>
+                        <span className="text-sm text-gray-500 ml-1">FLOW</span>
                       </p>
                     </div>
 
@@ -536,7 +536,7 @@ export function DCADashboard() {
                       <p className="text-lg font-bold font-mono">
                         {plan.avgPrice}
                         <span className="text-sm text-gray-500 ml-1">
-                          FLOW
+                          USDC/FLOW
                         </span>
                       </p>
                     </div>
