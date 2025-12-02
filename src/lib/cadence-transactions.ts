@@ -673,7 +673,7 @@ transaction(
 export const SCHEDULE_DCA_PLAN_TX_V2 = `
 import FlowTransactionScheduler from 0xFlowTransactionScheduler
 import FlowTransactionSchedulerUtils from 0xFlowTransactionSchedulerUtils
-import DCATransactionHandler from 0xDCATransactionHandler
+import DCATransactionHandlerV2 from 0xDCATransactionHandler
 import FlowToken from 0xFlowToken
 import FungibleToken from 0xFungibleToken
 
@@ -733,14 +733,14 @@ transaction(
         )
 
         // Create ScheduleConfig struct inline (for autonomous rescheduling)
-        let scheduleConfig = DCATransactionHandler.ScheduleConfig(
+        let scheduleConfig = DCATransactionHandlerV2.ScheduleConfig(
             schedulerManagerCap: managerCap,
             priority: pr,
             executionEffort: executionEffort
         )
 
         // Prepare transaction data with plan ID and schedule config
-        let transactionData = DCATransactionHandler.DCATransactionData(
+        let transactionData = DCATransactionHandlerV2.DCATransactionData(
             planId: planId,
             scheduleConfig: scheduleConfig
         )
