@@ -133,18 +133,18 @@ export function CreateDCAPlan() {
     setLoadingBalance(true);
     try {
       // Fetch FLOW balance
-      const flowBal: number = await fcl.query({
+      const flowBal = await fcl.query({
         cadence: GET_TOKEN_BALANCE_SCRIPT,
         args: (arg, t) => [arg(address, t.Address), arg("FLOW", t.String)],
       });
-      setFlowBalance(flowBal.toFixed(2));
+      setFlowBalance(parseFloat(flowBal).toFixed(2));
 
       // Fetch USDT balance
-      const usdtBal: number = await fcl.query({
+      const usdtBal = await fcl.query({
         cadence: GET_TOKEN_BALANCE_SCRIPT,
         args: (arg, t) => [arg(address, t.Address), arg("USDT", t.String)],
       });
-      setUsdtBalance(usdtBal.toFixed(2));
+      setUsdtBalance(parseFloat(usdtBal).toFixed(2));
     } catch (error) {
       console.error("Error fetching balances:", error);
       setFlowBalance("0.00");
