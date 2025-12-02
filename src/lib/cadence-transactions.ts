@@ -6,12 +6,12 @@
  */
 
 /**
- * Setup DCA Controller
+ * Setup DCA Controller V1 (Emulator)
  * Must be run once before creating any plans
  *
  * IMPORTANT: If controller already exists, this will update it with the fee vault capability
  */
-export const SETUP_CONTROLLER_TX = `
+export const SETUP_CONTROLLER_TX_V1 = `
 import DCAController from 0xDCAController
 import FlowToken from 0xFlowToken
 import FungibleToken from 0xFungibleToken
@@ -109,7 +109,110 @@ transaction {
 `;
 
 /**
- * Create DCA Plan
+ * Setup DCA Controller V2 (Mainnet)
+ * Must be run once before creating any plans
+ *
+ * IMPORTANT: If controller already exists, this will update it with fee vault capability
+ */
+export const SETUP_CONTROLLER_TX_V2 = `
+import DCAControllerV2 from 0xDCAController
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
+import EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14 from 0x1e4aa0b87d10b141
+
+transaction {
+    prepare(signer: auth(Storage, Capabilities) &Account) {
+        // Check if controller already exists - if so, update it with fee vault capability
+        if signer.storage.borrow<&DCAControllerV2.Controller>(
+            from: DCAControllerV2.ControllerStoragePath
+        ) != nil {
+            log("DCA Controller V2 already exists, updating with fee vault capability...")
+
+            let controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
+                from: DCAControllerV2.ControllerStoragePath
+            )!
+
+            // Configure fee vault capability (FLOW) for scheduler fees
+            let feeVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+                /storage/flowTokenVault
+            )
+            controllerRef.setFeeVaultCapability(cap: feeVaultCap)
+
+            log("Controller V2 updated successfully")
+            return
+        }
+
+        // Initialize EVM bridged token vault if it doesn't exist
+        let vaultStoragePath = /storage/evmVMBridgedTokenVault_f1815bd50389c46847f0bda824ec8da914045d14
+        let vaultPublicPath = /public/evmVMBridgedTokenBalance_f1815bd50389c46847f0bda824ec8da914045d14
+        let vaultReceiverPath = /public/evmVMBridgedTokenReceiver_f1815bd50389c46847f0bda824ec8da914045d14
+
+        if signer.storage.borrow<&EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(
+            from: vaultStoragePath
+        ) == nil {
+            // Create empty EVM bridged token vault
+            let evmVault <- EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.createEmptyVault(vaultType: Type<@EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>())
+
+            // Save vault to storage
+            signer.storage.save(<-evmVault, to: vaultStoragePath)
+
+            // Create public receiver capability
+            let receiverCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
+                vaultStoragePath
+            )
+            signer.capabilities.publish(receiverCap, at: vaultReceiverPath)
+
+            // Create public balance capability
+            let balanceCap = signer.capabilities.storage.issue<&EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(
+                vaultStoragePath
+            )
+            signer.capabilities.publish(balanceCap, at: vaultPublicPath)
+
+            log("EVM bridged token vault initialized")
+        }
+
+        // Create controller V2
+        let controller <- DCAControllerV2.createController()
+
+        // Store controller
+        signer.storage.save(<-controller, to: DCAControllerV2.ControllerStoragePath)
+
+        // Create public capability
+        let cap = signer.capabilities.storage.issue<&DCAControllerV2.Controller>(
+            DCAControllerV2.ControllerStoragePath
+        )
+        signer.capabilities.publish(cap, at: DCAControllerV2.ControllerPublicPath)
+
+        // Borrow controller reference
+        let controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
+            from: DCAControllerV2.ControllerStoragePath
+        )!
+
+        // Configure source vault capability (EVM bridged token)
+        let sourceVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+            vaultStoragePath
+        )
+        controllerRef.setSourceVaultCapability(cap: sourceVaultCap)
+
+        // Configure target vault capability (FLOW)
+        let targetVaultCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
+            /storage/flowTokenVault
+        )
+        controllerRef.setTargetVaultCapability(cap: targetVaultCap)
+
+        // Configure fee vault capability (FLOW) for scheduler fees
+        let feeVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+            /storage/flowTokenVault
+        )
+        controllerRef.setFeeVaultCapability(cap: feeVaultCap)
+
+        log("DCA Controller V2 setup complete for EVM bridged token → FLOW with scheduler fees")
+    }
+}
+`;
+
+/**
+ * Create DCA Plan V1 (Emulator)
  *
  * @param amountPerInterval - Amount of FLOW per interval (UFix64)
  * @param intervalSeconds - Seconds between executions (UInt64)
@@ -117,7 +220,7 @@ transaction {
  * @param maxExecutions - Optional max executions (UInt64? or nil)
  * @param firstExecutionDelay - Seconds until first execution (UInt64)
  */
-export const CREATE_PLAN_TX = `
+export const CREATE_PLAN_TX_V1 = `
 import DCAPlan from 0xDCAPlan
 import DCAController from 0xDCAController
 import DeFiMath from 0xDeFiMath
@@ -173,6 +276,75 @@ transaction(
         self.controllerRef.addPlan(plan: <-plan)
 
         log("Created EVM bridged token → FLOW DCA Plan #".concat(planId.toString()))
+    }
+}
+`;
+
+/**
+ * Create DCA Plan V2 (Mainnet)
+ *
+ * @param amountPerInterval - Amount of FLOW per interval (UFix64)
+ * @param intervalSeconds - Seconds between executions (UInt64)
+ * @param maxSlippageBps - Max slippage in basis points (UInt64, e.g. 100 = 1%)
+ * @param maxExecutions - Optional max executions (UInt64? or nil)
+ * @param firstExecutionDelay - Seconds until first execution (UInt64)
+ */
+export const CREATE_PLAN_TX_V2 = `
+import DCAPlanV2 from 0xDCAPlan
+import DCAControllerV2 from 0xDCAController
+import DeFiMath from 0xDeFiMath
+import FlowToken from 0xFlowToken
+import EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14 from 0x1e4aa0b87d10b141
+
+transaction(
+    amountPerInterval: UFix64,
+    intervalSeconds: UInt64,
+    maxSlippageBps: UInt64,
+    maxExecutions: UInt64?,
+    firstExecutionDelay: UInt64
+) {
+    let controllerRef: &DCAControllerV2.Controller
+
+    prepare(signer: auth(Storage) &Account) {
+        // Borrow controller V2
+        self.controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
+            from: DCAControllerV2.ControllerStoragePath
+        ) ?? panic("DCA Controller V2 not found. Run setup first")
+
+        // Validate controller is fully configured
+        assert(
+            self.controllerRef.isFullyConfigured(),
+            message: "Controller not fully configured"
+        )
+    }
+
+    execute {
+        // Validate inputs
+        assert(amountPerInterval > 0.0, message: "Amount must be positive")
+        assert(intervalSeconds > 0, message: "Interval must be positive")
+        assert(DeFiMath.isValidSlippage(slippageBps: maxSlippageBps), message: "Invalid slippage")
+        assert(firstExecutionDelay > 0, message: "Delay must be positive")
+
+        // Calculate first execution time
+        let firstExecutionTime = getCurrentBlock().timestamp + UFix64(firstExecutionDelay)
+
+        // Create plan for EVM bridged token → FLOW swap
+        let plan <- DCAPlanV2.createPlan(
+            sourceTokenType: Type<@EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(),
+            targetTokenType: Type<@FlowToken.Vault>(),
+            amountPerInterval: amountPerInterval,
+            intervalSeconds: intervalSeconds,
+            maxSlippageBps: maxSlippageBps,
+            maxExecutions: maxExecutions,
+            firstExecutionTime: firstExecutionTime
+        )
+
+        let planId = plan.id
+
+        // Add to controller
+        self.controllerRef.addPlan(plan: <-plan)
+
+        log("Created EVM bridged token → FLOW DCA Plan V2 #".concat(planId.toString()))
     }
 }
 `;
@@ -954,4 +1126,7 @@ transaction(planId: UInt64, numExecutions: UInt64, delaySeconds: UFix64, priorit
 }
 `;
 
+// Conditional exports based on network
+export const SETUP_CONTROLLER_TX = NETWORK === "mainnet" ? SETUP_CONTROLLER_TX_V2 : SETUP_CONTROLLER_TX_V1;
+export const CREATE_PLAN_TX = NETWORK === "mainnet" ? CREATE_PLAN_TX_V2 : CREATE_PLAN_TX_V1;
 export const FUND_FEE_VAULT_TX = NETWORK === "mainnet" ? FUND_FEE_VAULT_TX_V2 : FUND_FEE_VAULT_TX_V1;
