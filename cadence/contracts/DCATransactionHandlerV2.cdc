@@ -6,7 +6,7 @@ import "DeFiMath"
 import "FungibleToken"
 import "FlowToken"
 import "SwapRouter"
-import USDCFlow from 0xf1ab99c82dee3526
+import EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14 from 0x1e4aa0b87d10b141
 
 /// DCATransactionHandler: Scheduled transaction handler for DCA execution (USDC/FLOW swaps via IncrementFi)
 ///
@@ -283,14 +283,14 @@ access(all) contract DCATransactionHandlerV2 {
             let targetTypeId = planRef.targetTokenType.identifier
 
             let tokenPath: [String] = []
-            if sourceTypeId.contains("USDCFlow") && targetTypeId.contains("FlowToken") {
-                // USDC → FLOW
-                tokenPath.append("A.f1ab99c82dee3526.USDCFlow")
+            if sourceTypeId.contains("EVMVMBridgedToken") && targetTypeId.contains("FlowToken") {
+                // Bridged EVM Token → FLOW
+                tokenPath.append("A.1e4aa0b87d10b141.EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14")
                 tokenPath.append("A.1654653399040a61.FlowToken")
-            } else if sourceTypeId.contains("FlowToken") && targetTypeId.contains("USDCFlow") {
-                // FLOW → USDC
+            } else if targetTypeId.contains("EVMVMBridgedToken") && sourceTypeId.contains("FlowToken") {
+                // FLOW → Bridged EVM Token
                 tokenPath.append("A.1654653399040a61.FlowToken")
-                tokenPath.append("A.f1ab99c82dee3526.USDCFlow")
+                tokenPath.append("A.1e4aa0b87d10b141.EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14")
             } else {
                 // Unsupported swap path
                 destroy tokensToSwap
@@ -298,7 +298,7 @@ access(all) contract DCATransactionHandlerV2 {
                     success: false,
                     amountIn: nil,
                     amountOut: nil,
-                    errorMessage: "Unsupported token pair. Only USDC ↔ FLOW swaps are currently supported."
+                    errorMessage: "Unsupported token pair. Only bridged EVM token ↔ FLOW swaps are currently supported."
                 )
             }
 
