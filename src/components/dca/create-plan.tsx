@@ -210,6 +210,10 @@ export function CreateDCAPlan() {
       1000
     );
 
+    console.log("CREATE_PLAN_TX result:", result);
+    console.log("result.success:", result.success);
+    console.log("result.events:", result.events);
+
     if (result.success) {
       // Auto-schedule the plan after creation
       // Extract plan ID from transaction events
