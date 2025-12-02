@@ -328,10 +328,10 @@ transaction(
         // Calculate first execution time
         let firstExecutionTime = getCurrentBlock().timestamp + UFix64(firstExecutionDelay)
 
-        // Create plan for EVM bridged token → FLOW swap
+        // Create plan for FLOW → EVM bridged USDC swap
         let plan <- DCAPlanV2.createPlan(
-            sourceTokenType: Type<@EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(),
-            targetTokenType: Type<@FlowToken.Vault>(),
+            sourceTokenType: Type<@FlowToken.Vault>(),
+            targetTokenType: Type<@EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(),
             amountPerInterval: amountPerInterval,
             intervalSeconds: intervalSeconds,
             maxSlippageBps: maxSlippageBps,
@@ -344,7 +344,7 @@ transaction(
         // Add to controller
         self.controllerRef.addPlan(plan: <-plan)
 
-        log("Created EVM bridged token → FLOW DCA Plan V2 #".concat(planId.toString()))
+        log("Created FLOW → EVM bridged USDC DCA Plan V2 #".concat(planId.toString()))
     }
 }
 `;
@@ -624,7 +624,7 @@ access(all) fun getTokenSymbol(_ contractName: String): String {
  *
  * @param planId - ID of the plan to pause
  */
-export const PAUSE_PLAN_TX = `
+export const PAUSE_PLAN_TX_V1 = `
 import DCAController from 0xDCAController
 
 transaction(planId: UInt64) {
@@ -647,13 +647,36 @@ transaction(planId: UInt64) {
 }
 `;
 
+export const PAUSE_PLAN_TX_V2 = `
+import DCAControllerV2 from 0xDCAController
+
+transaction(planId: UInt64) {
+    let controllerRef: &DCAControllerV2.Controller
+
+    prepare(signer: auth(Storage) &Account) {
+        self.controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
+            from: DCAControllerV2.ControllerStoragePath
+        ) ?? panic("DCA Controller V2 not found")
+    }
+
+    execute {
+        let planRef = self.controllerRef.borrowPlan(id: planId)
+            ?? panic("Plan not found with ID: ".concat(planId.toString()))
+
+        planRef.pause()
+
+        log("Plan ".concat(planId.toString()).concat(" has been paused"))
+    }
+}
+`;
+
 /**
  * Resume DCA Plan
  *
  * @param planId - ID of the plan to resume
  * @param delaySeconds - Optional seconds until next execution (nil = use interval from now)
  */
-export const RESUME_PLAN_TX = `
+export const RESUME_PLAN_TX_V1 = `
 import DCAController from 0xDCAController
 
 transaction(planId: UInt64, delaySeconds: UInt64?) {
@@ -663,6 +686,36 @@ transaction(planId: UInt64, delaySeconds: UInt64?) {
         self.controllerRef = signer.storage.borrow<&DCAController.Controller>(
             from: DCAController.ControllerStoragePath
         ) ?? panic("DCA Controller not found")
+    }
+
+    execute {
+        let planRef = self.controllerRef.borrowPlan(id: planId)
+            ?? panic("Plan not found with ID: ".concat(planId.toString()))
+
+        let nextExecutionTime = delaySeconds != nil
+            ? getCurrentBlock().timestamp + UFix64(delaySeconds!)
+            : nil
+
+        planRef.resume(nextExecutionTime: nextExecutionTime)
+
+        log("Plan ".concat(planId.toString()).concat(" has been resumed"))
+        if nextExecutionTime != nil {
+            log("Next execution at: ".concat(nextExecutionTime!.toString()))
+        }
+    }
+}
+`;
+
+export const RESUME_PLAN_TX_V2 = `
+import DCAControllerV2 from 0xDCAController
+
+transaction(planId: UInt64, delaySeconds: UInt64?) {
+    let controllerRef: &DCAControllerV2.Controller
+
+    prepare(signer: auth(Storage) &Account) {
+        self.controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
+            from: DCAControllerV2.ControllerStoragePath
+        ) ?? panic("DCA Controller V2 not found")
     }
 
     execute {
@@ -730,7 +783,7 @@ access(all) fun main(address: Address, tokenType: String): UFix64 {
  *
  * Note: V2 handlers use Manager pattern and don't require setHandlerCapability
  */
-export const INIT_DCA_HANDLER_TX = `
+export const INIT_DCA_HANDLER_TX_V1 = `
 import DCATransactionHandler from 0xDCATransactionHandler
 import DCAController from 0xDCAController
 import FlowTransactionScheduler from 0xFlowTransactionScheduler
@@ -773,6 +826,53 @@ transaction() {
         signer.capabilities.publish(handlerCapPublic, at: /public/DCATransactionHandler)
 
         log("DCA Handler initialization complete")
+    }
+}
+`;
+
+export const INIT_DCA_HANDLER_TX_V2 = `
+import DCATransactionHandlerV2 from 0xDCATransactionHandler
+import DCAControllerV2 from 0xDCAController
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+
+transaction() {
+    prepare(signer: auth(Storage, Capabilities) &Account) {
+        // Check if handler already exists
+        if signer.storage.borrow<&DCATransactionHandlerV2.Handler>(from: /storage/DCATransactionHandlerV2) != nil {
+            log("DCA Handler V2 already exists")
+            return
+        }
+
+        // Get controller capability with Owner entitlement
+        let controllerCap = signer.capabilities.storage
+            .issue<auth(DCAControllerV2.Owner) &DCAControllerV2.Controller>(
+                DCAControllerV2.ControllerStoragePath
+            )
+
+        // Verify controller exists and capability is valid
+        assert(controllerCap.check(), message: "Invalid controller capability. Run setup first.")
+
+        // Create handler resource
+        let handler <- DCATransactionHandlerV2.createHandler(controllerCap: controllerCap)
+
+        // Save handler to storage
+        signer.storage.save(<-handler, to: /storage/DCATransactionHandlerV2)
+
+        // Create entitled capability for FlowTransactionScheduler
+        let handlerCapEntitled = signer.capabilities.storage
+            .issue<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>(
+                /storage/DCATransactionHandlerV2
+            )
+
+        // Publish public capability for discoverability
+        let handlerCapPublic = signer.capabilities.storage
+            .issue<&{FlowTransactionScheduler.TransactionHandler}>(
+                /storage/DCATransactionHandlerV2
+            )
+
+        signer.capabilities.publish(handlerCapPublic, at: /public/DCATransactionHandlerV2)
+
+        log("DCA Handler V2 initialization complete")
     }
 }
 `;
@@ -1271,5 +1371,8 @@ transaction {
 export const SETUP_CONTROLLER_TX = NETWORK === "mainnet" ? SETUP_CONTROLLER_TX_V2 : SETUP_CONTROLLER_TX_V1;
 export const CREATE_PLAN_TX = NETWORK === "mainnet" ? CREATE_PLAN_TX_V2 : CREATE_PLAN_TX_V1;
 export const FUND_FEE_VAULT_TX = NETWORK === "mainnet" ? FUND_FEE_VAULT_TX_V2 : FUND_FEE_VAULT_TX_V1;
+export const INIT_DCA_HANDLER_TX = NETWORK === "mainnet" ? INIT_DCA_HANDLER_TX_V2 : INIT_DCA_HANDLER_TX_V1;
+export const PAUSE_PLAN_TX = NETWORK === "mainnet" ? PAUSE_PLAN_TX_V2 : PAUSE_PLAN_TX_V1;
+export const RESUME_PLAN_TX = NETWORK === "mainnet" ? RESUME_PLAN_TX_V2 : RESUME_PLAN_TX_V1;
 export const GET_ALL_PLANS_SCRIPT = NETWORK === "mainnet" ? GET_ALL_PLANS_SCRIPT_V2 : GET_ALL_PLANS_SCRIPT_V1;
 export const CHECK_CONTROLLER_SCRIPT = NETWORK === "mainnet" ? CHECK_CONTROLLER_SCRIPT_V2 : CHECK_CONTROLLER_SCRIPT_V1;
