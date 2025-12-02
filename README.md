@@ -68,47 +68,59 @@ Open [http://localhost:3001](http://localhost:3001) in your browser.
 
 ## 🌐 Mainnet Deployment
 
-Ready to deploy to production? This application is fully production-ready with real IncrementFi swap integration.
+**🎉 V2 contracts are now LIVE on Flow Mainnet with autonomous scheduling!**
 
-### Production Features
-
-- ✅ **Real USDT → FLOW Swaps** via IncrementFi SwapRouter
+This application is production-ready with:
+- ✅ **Autonomous DCA Execution** via FlowTransactionScheduler (mainnet supported!)
+- ✅ **Real USDT ↔ FLOW Swaps** via IncrementFi SwapRouter
+- ✅ **Manager Pattern** for recursive scheduling (no manual intervention)
 - ✅ **Slippage Protection** with configurable basis points
-- ✅ **Production-Grade Security** - audited contract patterns
-- ✅ **Mainnet Token Support** - USDT (TeleportedTetherToken) and FLOW
-- ✅ **Gas Optimized** - ~5 FLOW for full deployment
+- ✅ **Production-Grade Security** - Cadence 1.0 best practices
 
-### Quick Deploy
+### Deployed Contract Addresses (V2)
+
+**Mainnet Deployment**: `0xca7ee55e4fc3251a`
+
+```
+DeFiMath:                   0xca7ee55e4fc3251a (shared utility)
+DCAPlanV2:                  0xca7ee55e4fc3251a
+DCAControllerV2:            0xca7ee55e4fc3251a
+DCATransactionHandlerV2:    0xca7ee55e4fc3251a
+
+FlowTransactionScheduler:   0xe467b9dd11fa00df (Flow core contract)
+FlowTransactionSchedulerUtils: 0xe467b9dd11fa00df (Flow core contract)
+```
+
+### V2 Features (Mainnet Only)
+
+**Autonomous Scheduling with Manager Pattern:**
+- Plans reschedule themselves after each execution
+- Manager capability passed in transaction data
+- Uses `FlowTransactionSchedulerUtils.Manager.scheduleByHandler()`
+- No user intervention required for recurring DCA
+
+**Why V2?**
+- V1 contracts remain on mainnet (Flow Stable Cadence prevents removal)
+- V2 adds autonomous scheduling support via Manager pattern
+- Emulator/testnet continue using V1 (simpler pattern)
+
+### Quick Deploy (For Your Own Instance)
 
 ```bash
-# 1. Run setup script
-./scripts/setup-mainnet.sh
-
-# 2. Deploy contracts
+# 1. Configure your mainnet account in flow.json
+# 2. Deploy V2 contracts
 flow project deploy --network mainnet
 
-# 3. Update frontend config with deployed addresses
-# Edit src/config/fcl-config.ts
-```
-
-**For detailed deployment instructions, see:** → **[DEPLOYMENT.md](./DEPLOYMENT.md)**
-
-### Mainnet Contract Addresses
-
-After deployment, your contracts will be at your deployer address:
-
-```
-DeFiMath: 0xYOUR_ADDRESS
-DCAPlan: 0xYOUR_ADDRESS
-DCAController: 0xYOUR_ADDRESS
-DCATransactionHandler: 0xYOUR_ADDRESS
-```
-
-Update `src/config/fcl-config.ts` and `.env.local`:
-
-```env
+# 3. Frontend automatically uses V2 on mainnet
+# Set in .env.local:
 NEXT_PUBLIC_FLOW_NETWORK=mainnet
 ```
+
+**Frontend auto-detects network and uses:**
+- Mainnet → V2 contracts (autonomous scheduling)
+- Emulator/Testnet → V1 contracts (manual scheduling)
+
+All handled automatically via FCL configuration!
 
 ## 🎨 Frontend Features
 
@@ -174,10 +186,13 @@ See [FRONTEND_GUIDE.md](./FRONTEND_GUIDE.md) for complete frontend documentation
 dcatoken/
 ├── cadence/
 │   ├── contracts/
-│   │   ├── DeFiMath.cdc                 # FP128 fixed-point math
-│   │   ├── DCAPlan.cdc                  # DCA plan resource
-│   │   ├── DCAController.cdc            # User management
-│   │   └── DCATransactionHandler.cdc    # Scheduler handler
+│   │   ├── DeFiMath.cdc                 # FP128 fixed-point math (shared)
+│   │   ├── DCAPlan.cdc                  # V1: DCA plan resource (emulator/testnet)
+│   │   ├── DCAPlanV2.cdc                # V2: Plan with Manager pattern (mainnet)
+│   │   ├── DCAController.cdc            # V1: User management
+│   │   ├── DCAControllerV2.cdc          # V2: Controller for mainnet
+│   │   ├── DCATransactionHandler.cdc    # V1: Scheduler handler
+│   │   └── DCATransactionHandlerV2.cdc  # V2: Autonomous scheduling (mainnet)
 │   ├── transactions/
 │   │   ├── setup_controller.cdc         # Initialize controller
 │   │   ├── init_dca_handler.cdc         # Initialize handler
@@ -189,11 +204,14 @@ dcatoken/
 │       ├── get_all_plans.cdc            # Query all plans
 │       ├── get_plan_details.cdc         # Query plan details
 │       └── check_controller_configured.cdc
-├── src/                                 # Next.js frontend (flow-react-sdk-starter)
-├── flow.json                            # Dependencies & config
+├── src/                                 # Next.js frontend
+│   ├── config/
+│   │   └── fcl-config.ts                # Network-aware FCL config (auto V2 on mainnet)
+│   └── lib/
+│       └── cadence-transactions.ts      # Transaction templates (V2 Manager pattern)
+├── flow.json                            # V2 deployment config
 ├── TESTING_GUIDE.md                     # Complete testing walkthrough
-├── NEXT_STEPS.md                        # Real IncrementFi integration guide
-├── INTEGRATION_STATUS.md                # Project status tracker
+├── DEPLOYMENT.md                        # Mainnet deployment guide
 └── README.md                            # This file
 ```
 
@@ -204,7 +222,7 @@ dcatoken/
 ```
 ┌─────────────────────────────────────────┐
 │         User Creates DCA Plan            │
-│  "Invest 10 FLOW → Beaver every 7 days" │
+│   "Invest 10 USDT → FLOW every 7 days"  │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
@@ -214,8 +232,9 @@ dcatoken/
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
-│     Schedule via FlowTransactionScheduler │
-│  Next execution: block.timestamp + 7 days │
+│     Schedule via Manager.schedule()      │
+│  Pass ScheduleConfig with Manager cap    │
+│  Next execution: block.timestamp + 7d   │
 └─────────────────────────────────────────┘
                     ↓
          ⏰ At Scheduled Time
@@ -223,16 +242,21 @@ dcatoken/
 ┌─────────────────────────────────────────┐
 │  Scheduler calls handler.executeTransaction() │
 │                                          │
-│  Handler:                                │
-│  1. Validates plan is ready              │
-│  2. Withdraws FLOW from user vault       │
-│  3. Builds DeFi Actions stack:           │
-│     Source → Swapper → Sink              │
-│  4. Executes swap (IncrementFi)          │
-│  5. Deposits acquired tokens             │
-│  6. Updates FP128 average price          │
-│  7. Schedules next execution             │
+│  Handler (V2 with autonomous rescheduling): │
+│  1. Extract ScheduleConfig from data     │
+│  2. Validate plan is ready               │
+│  3. Withdraw USDT from user vault        │
+│  4. Execute swap via IncrementFi:        │
+│     SwapRouter.swapExactTokensForTokens()│
+│  5. Deposit FLOW to target vault         │
+│  6. Update FP128 average price           │
+│  7. Record execution in plan             │
+│  8. Borrow Manager from ScheduleConfig   │
+│  9. Call Manager.scheduleByHandler()     │
+│     → Autonomously schedules next run!   │
 └─────────────────────────────────────────┘
+                    ↓
+              (Repeats autonomously)
 ```
 
 ### Key Components
@@ -250,10 +274,15 @@ dcatoken/
 - Public interface for querying
 
 #### 3. **DCATransactionHandler** - The Executor
-- Implements `FlowTransactionScheduler.TransactionHandler`
-- Has `Execute` entitlement from scheduler
-- Autonomous execution without user signatures
-- Integrates DeFi Actions for composable swaps
+- **V1** (emulator/testnet): Basic handler implementation
+- **V2** (mainnet): Autonomous rescheduling with Manager pattern
+  - Implements `FlowTransactionScheduler.TransactionHandler`
+  - Has `Execute` entitlement from scheduler
+  - Receives `ScheduleConfig` with Manager capability in transaction data
+  - Calls `Manager.scheduleByHandler()` after each execution
+  - Autonomous execution without user signatures
+- Uses IncrementFi `SwapRouter` for real swaps (mainnet)
+- Slippage protection calculated with DeFiMath
 
 #### 4. **DeFiMath** - High-Precision Calculations
 - 128-bit fixed-point (FP128) arithmetic
@@ -267,21 +296,26 @@ This project demonstrates best practices from official Flow scaffolds:
 
 ### From `scheduledtransactions-scaffold`:
 - ✅ Proper `FlowTransactionScheduler.TransactionHandler` implementation
-- ✅ Manager resource pattern for scheduling
-- ✅ Entitled capability management
-- ✅ Fee estimation and payment
+- ✅ **Manager resource pattern for autonomous scheduling** (V2)
+  - `FlowTransactionSchedulerUtils.Manager` for recursive scheduling
+  - `ScheduleConfig` struct with Manager capability
+  - `scheduleByHandler()` for self-rescheduling handlers
+- ✅ Entitled capability management (`Execute`, `Owner`)
+- ✅ Fee estimation and payment (`estimate()` returns struct)
+- ✅ Transaction data passing (structs in `data` parameter)
 
-### From `flow-actions-scaffold`:
-- ✅ DeFi Actions framework integration
-- ✅ IncrementFi connector patterns
-- ✅ Composable Source → Swapper → Sink stacks
-- ✅ UniqueIdentifier for operation tracing
+### From IncrementFi Production Integration:
+- ✅ **Real mainnet swaps** via `SwapRouter.swapExactTokensForTokens()`
+- ✅ Token path configuration (`USDT` → `FLOW`)
+- ✅ Slippage protection with `amountOutMin`
+- ✅ Production DEX integration (not just connectors)
 
 ### From `flow-react-sdk-starter`:
 - ✅ Next.js 14 with App Router
 - ✅ FCL integration for wallet connection
+- ✅ Network-aware configuration (auto V2 on mainnet)
 - ✅ TypeScript + Tailwind CSS
-- ✅ flow.json configuration
+- ✅ flow.json with V2 deployments
 
 ## 📚 Documentation
 

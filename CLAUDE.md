@@ -190,37 +190,72 @@ When you create or modify Flow Action-based flows:
 
 These apps will also highlight **Scheduled Transactions** (via `FlowTransactionScheduler` and related contracts).
 
-### 6.1 Constraints & networks
+### 6.1 Network Support & V2 Architecture
 
-- Recognize that scheduled transactions are currently:
-  - **Available on emulator and testnet**.
-  - Under active development and may change.
-- Make sure examples are clearly marked as **emulator/testnet** in:
-  - Code comments.
-  - README sections.
-- Where implementation details may change, add a note in the README explaining that this is an evolving feature and link to official docs.
+**IMPORTANT: Scheduled Transactions are now LIVE on mainnet!**
+
+- ✅ **Mainnet**: Full support with `FlowTransactionScheduler` at `0xe467b9dd11fa00df`
+- ✅ **Testnet**: Available for testing
+- ✅ **Emulator**: Available with `--scheduled-transactions` flag
+
+**V2 Contract Pattern for Mainnet:**
+- Due to Flow Stable Cadence (prevents contract removal/modification), deploy V2 contracts alongside existing V1
+- Use `DCAPlanV2`, `DCAControllerV2`, `DCATransactionHandlerV2` for mainnet
+- Frontend auto-detects network and uses appropriate version via FCL config
+- V1 contracts remain for emulator/testnet (simpler patterns for learning)
 
 ### 6.2 Implementation patterns
 
 When working with scheduled transactions:
 
-1. Use the **official scheduled-transactions scaffold** as a baseline for:
-   - Contract layout.
-   - Example handlers.
-   - Transaction patterns for scheduling and execution.
-2. Clearly separate:
-   - **User-triggered transactions** that schedule work.
-   - **Scheduled handlers** that the network executes later.
-3. Handle:
-   - `delaySeconds`, `priority`, `executionEffort`, and optional `transactionData` carefully and explain each in comments.
-4. Emit events:
-   - When a scheduled transaction is created.
-   - When it executes.
-   - When it fails or no-ops (if applicable).
-5. For each new scheduled flow, add a subsection in the README:
-   - “What this scheduled transaction does.”
-   - “Parameters and tradeoffs.”
-   - “How to test it (commands + expected behavior).”
+1. **Use Manager Pattern for Autonomous Scheduling (Mainnet V2)**
+   - Import `FlowTransactionSchedulerUtils` for Manager resource
+   - Create `ScheduleConfig` struct with Manager capability
+   - Pass ScheduleConfig in transaction data for recursive scheduling
+   - Handler calls `Manager.scheduleByHandler()` to reschedule itself
+   - Example from DCATransactionHandlerV2:
+   ```cadence
+   // In handler's scheduleNextExecution():
+   let schedulerManager = scheduleConfig.schedulerManagerCap.borrow()
+   let scheduledId = schedulerManager!.scheduleByHandler(
+       handlerTypeIdentifier: self.getType().identifier,
+       handlerUUID: self.uuid,
+       data: transactionData,
+       timestamp: nextExecutionTime!,
+       priority: scheduleConfig.priority,
+       executionEffort: scheduleConfig.executionEffort,
+       fees: <-fees
+   )
+   ```
+
+2. Use the **official scheduled-transactions scaffold** as a baseline for:
+   - Contract layout (see CounterLoopTransactionHandler.cdc)
+   - Manager pattern implementation
+   - Transaction patterns for scheduling and execution
+
+3. Clearly separate:
+   - **User-triggered transactions** that schedule work
+   - **Scheduled handlers** that the network executes later
+   - **Transaction data structs** that carry scheduling config
+
+4. Handle parameters carefully:
+   - `timestamp` - when to execute
+   - `priority` - High/Medium/Low (affects fee estimation)
+   - `executionEffort` - gas limit
+   - `data` - struct containing plan ID + ScheduleConfig for V2
+   - **Fee estimation**: Use `estimate()` which returns struct with `flowFee` field
+
+5. Emit events:
+   - When a scheduled transaction is created
+   - When it executes (with execution results)
+   - When it reschedules (include next execution time)
+   - When it fails or no-ops
+
+6. For each new scheduled flow, add a subsection in the README:
+   - "What this scheduled transaction does"
+   - "Manager pattern for autonomous rescheduling" (if applicable)
+   - "Parameters and tradeoffs"
+   - "How to test it (commands + expected behavior)"
 
 ### 6.3 Combining with Flow Actions
 
