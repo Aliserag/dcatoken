@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import * as fcl from "@onflow/fcl";
 import { GET_ALL_PLANS_SCRIPT, PAUSE_PLAN_TX, RESUME_PLAN_TX, INIT_DCA_HANDLER_TX, SCHEDULE_DCA_PLAN_TX, FUND_FEE_VAULT_TX } from "@/lib/cadence-transactions";
 import { useTransaction } from "@/hooks/use-transaction";
+import { useFlowPrice } from "@/hooks/use-flow-price";
 
 interface DCAPlan {
   id: number;
@@ -107,6 +108,7 @@ export function DCADashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { executeTransaction } = useTransaction();
+  const { priceData } = useFlowPrice();
 
   // Subscribe to user authentication
   useEffect(() => {
@@ -320,6 +322,10 @@ export function DCADashboard() {
     0
   );
 
+  // Calculate total value in USDT for display
+  const totalInvestedUSDT = priceData ? totalInvested * priceData.usdt : 0;
+  const totalAcquiredUSDT = priceData ? totalAcquired * priceData.usdt : 0;
+
   // Show all plans (both scheduled and unscheduled)
   // This allows users to see plans that were just created but not yet scheduled
   const displayPlans = plans;
@@ -342,8 +348,13 @@ export function DCADashboard() {
           </p>
           <p className="text-3xl font-bold font-mono">
             {totalInvested.toFixed(2)}{" "}
-            <span className="text-lg text-gray-500">USDC</span>
+            <span className="text-lg text-gray-500">FLOW</span>
           </p>
+          {priceData && (
+            <p className="text-sm text-gray-500 mt-1">
+              ≈ ${totalInvestedUSDT.toFixed(2)} USDT
+            </p>
+          )}
         </div>
 
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
@@ -352,7 +363,10 @@ export function DCADashboard() {
           </p>
           <p className="text-3xl font-bold font-mono">
             {totalAcquired.toFixed(2)}{" "}
-            <span className="text-lg text-gray-500">FLOW</span>
+            <span className="text-lg text-gray-500">USDC</span>
+          </p>
+          <p className="text-sm text-gray-500 mt-1">
+            ≈ ${totalAcquired.toFixed(2)} USD value
           </p>
         </div>
       </div>
@@ -466,7 +480,7 @@ export function DCADashboard() {
                       <div>
                         <h3 className="text-xl font-bold">Plan #{plan.id}</h3>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {plan.amount} USDC · {plan.frequency}
+                          {plan.amount} FLOW · {plan.frequency}
                         </p>
                       </div>
                     </div>
@@ -541,9 +555,14 @@ export function DCADashboard() {
                       <p className="text-lg font-bold font-mono">
                         {plan.totalInvested}
                         <span className="text-sm text-gray-500 ml-1">
-                          USDC
+                          FLOW
                         </span>
                       </p>
+                      {priceData && parseFloat(plan.totalInvested) > 0 && (
+                        <p className="text-xs text-gray-500">
+                          ≈ ${(parseFloat(plan.totalInvested) * priceData.usdt).toFixed(2)}
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -552,8 +571,13 @@ export function DCADashboard() {
                       </p>
                       <p className="text-lg font-bold font-mono">
                         {plan.totalAcquired}
-                        <span className="text-sm text-gray-500 ml-1">FLOW</span>
+                        <span className="text-sm text-gray-500 ml-1">USDC</span>
                       </p>
+                      {parseFloat(plan.totalAcquired) > 0 && (
+                        <p className="text-xs text-gray-500">
+                          ≈ ${parseFloat(plan.totalAcquired).toFixed(2)} USD
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -563,7 +587,7 @@ export function DCADashboard() {
                       <p className="text-lg font-bold font-mono">
                         {plan.avgPrice}
                         <span className="text-sm text-gray-500 ml-1">
-                          FLOW/USDC
+                          USDC/FLOW
                         </span>
                       </p>
                     </div>
