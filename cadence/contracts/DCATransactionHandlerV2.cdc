@@ -87,6 +87,14 @@ access(all) contract DCATransactionHandlerV2 {
         timestamp: UFix64
     )
 
+    /// Event emitted when next execution scheduling fails
+    access(all) event NextExecutionSchedulingFailed(
+        planId: UInt64,
+        owner: Address,
+        reason: String,
+        timestamp: UFix64
+    )
+
     /// Handler resource that implements the Scheduled Transaction interface
     ///
     /// Each user has one instance of this stored in their account.
@@ -351,8 +359,17 @@ access(all) contract DCATransactionHandlerV2 {
             nextExecutionTime: UFix64?,
             scheduleConfig: ScheduleConfig
         ): Bool {
+            let ownerAddress = self.controllerCap.address
+            let timestamp = getCurrentBlock().timestamp
+
             // Verify nextExecutionTime is provided
             if nextExecutionTime == nil {
+                emit NextExecutionSchedulingFailed(
+                    planId: planId,
+                    owner: ownerAddress,
+                    reason: "Next execution time not set",
+                    timestamp: timestamp
+                )
                 return false
             }
 
@@ -379,24 +396,47 @@ access(all) contract DCATransactionHandlerV2 {
             // Borrow the controller to access fee vault
             let controller = self.controllerCap.borrow()
             if controller == nil {
+                emit NextExecutionSchedulingFailed(
+                    planId: planId,
+                    owner: ownerAddress,
+                    reason: "Could not borrow controller",
+                    timestamp: timestamp
+                )
                 return false
             }
 
             // Get fee vault capability from controller
             let feeVaultCap = controller!.getFeeVaultCapability()
             if feeVaultCap == nil || !feeVaultCap!.check() {
+                emit NextExecutionSchedulingFailed(
+                    planId: planId,
+                    owner: ownerAddress,
+                    reason: "Fee vault capability invalid or not set",
+                    timestamp: timestamp
+                )
                 return false
             }
 
             // Withdraw fees
             let feeVault = feeVaultCap!.borrow()
             if feeVault == nil {
+                emit NextExecutionSchedulingFailed(
+                    planId: planId,
+                    owner: ownerAddress,
+                    reason: "Could not borrow fee vault",
+                    timestamp: timestamp
+                )
                 return false
             }
 
             let feeAmount = estimate.flowFee ?? 0.0
             if feeVault!.balance < feeAmount {
-                // Insufficient FLOW for fees
+                emit NextExecutionSchedulingFailed(
+                    planId: planId,
+                    owner: ownerAddress,
+                    reason: "Insufficient FLOW for fees. Required: ".concat(feeAmount.toString()).concat(", Available: ").concat(feeVault!.balance.toString()),
+                    timestamp: timestamp
+                )
                 return false
             }
 
@@ -406,6 +446,12 @@ access(all) contract DCATransactionHandlerV2 {
             let schedulerManager = scheduleConfig.schedulerManagerCap.borrow()
             if schedulerManager == nil {
                 destroy fees
+                emit NextExecutionSchedulingFailed(
+                    planId: planId,
+                    owner: ownerAddress,
+                    reason: "Could not borrow scheduler manager",
+                    timestamp: timestamp
+                )
                 return false
             }
 
@@ -422,7 +468,17 @@ access(all) contract DCATransactionHandlerV2 {
             )
 
             // scheduledId > 0 means success
-            return scheduledId > 0
+            if scheduledId == 0 {
+                emit NextExecutionSchedulingFailed(
+                    planId: planId,
+                    owner: ownerAddress,
+                    reason: "Manager.scheduleByHandler() returned 0 (failed to schedule)",
+                    timestamp: timestamp
+                )
+                return false
+            }
+
+            return true
         }
 
         /// Get supported view types (for resource metadata)
