@@ -1115,7 +1115,6 @@ transaction(
  * Automatically selects V1 (emulator/testnet) or V2 (mainnet) based on NEXT_PUBLIC_FLOW_NETWORK
  */
 import { NETWORK } from "../config/fcl-config";
-export const SCHEDULE_DCA_PLAN_TX = NETWORK === "mainnet" ? SCHEDULE_DCA_PLAN_TX_V2 : SCHEDULE_DCA_PLAN_TX_V1;
 
 /**
  * Fund Fee Vault with FLOW for Scheduled Executions
@@ -1370,8 +1369,9 @@ transaction {
 // Conditional exports based on network
 export const SETUP_CONTROLLER_TX = NETWORK === "mainnet" ? SETUP_CONTROLLER_TX_V2 : SETUP_CONTROLLER_TX_V1;
 export const CREATE_PLAN_TX = NETWORK === "mainnet" ? CREATE_PLAN_TX_V2 : CREATE_PLAN_TX_V1;
-export const FUND_FEE_VAULT_TX = NETWORK === "mainnet" ? FUND_FEE_VAULT_TX_V2 : FUND_FEE_VAULT_TX_V1;
 export const INIT_DCA_HANDLER_TX = NETWORK === "mainnet" ? INIT_DCA_HANDLER_TX_V2 : INIT_DCA_HANDLER_TX_V1;
+export const SCHEDULE_DCA_PLAN_TX = NETWORK === "mainnet" ? SCHEDULE_DCA_PLAN_TX_V2 : SCHEDULE_DCA_PLAN_TX_V1;
+export const FUND_FEE_VAULT_TX = NETWORK === "mainnet" ? FUND_FEE_VAULT_TX_V2 : FUND_FEE_VAULT_TX_V1;
 export const PAUSE_PLAN_TX = NETWORK === "mainnet" ? PAUSE_PLAN_TX_V2 : PAUSE_PLAN_TX_V1;
 export const RESUME_PLAN_TX = NETWORK === "mainnet" ? RESUME_PLAN_TX_V2 : RESUME_PLAN_TX_V1;
 export const GET_ALL_PLANS_SCRIPT = NETWORK === "mainnet" ? GET_ALL_PLANS_SCRIPT_V2 : GET_ALL_PLANS_SCRIPT_V1;
