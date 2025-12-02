@@ -30,6 +30,8 @@ export function CreateDCAPlan() {
   const [maxExecutions, setMaxExecutions] = useState("");
   const [controllerConfigured, setControllerConfigured] = useState(false);
   const [checkingController, setCheckingController] = useState(false);
+  const [handlerInitialized, setHandlerInitialized] = useState(false);
+  const [checkingHandler, setCheckingHandler] = useState(false);
 
   // Token selection state
   const [availableTokens, setAvailableTokens] = useState<TokenInfo[]>([]);
@@ -218,35 +220,77 @@ export function CreateDCAPlan() {
         const planId = planCreatedEvent.data.planId;
         console.log("Plan created with ID:", planId);
 
-        // Auto-schedule the plan
-        setTimeout(async () => {
-          const delaySeconds = interval + ".0";
+        // Check if handler is initialized, if not, initialize it first
+        if (!handlerInitialized) {
+          setTimeout(async () => {
+            // Initialize handler
+            const handlerResult = await executeTransaction(
+              INIT_DCA_HANDLER_TX,
+              (arg, t) => [],
+              500
+            );
 
-          const scheduleResult = await executeTransaction(
-            SCHEDULE_DCA_PLAN_TX,
-            (arg, t) => [
-              arg(planId, t.UInt64),
-              arg(delaySeconds, t.UFix64),
-              arg("1", t.UInt8), // Priority: Medium
-              arg("9999", t.UInt64) // Execution effort
-            ],
-            500
-          );
+            if (handlerResult.success) {
+              setHandlerInitialized(true);
 
-          if (scheduleResult.success) {
-            alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}.`);
-          } else {
-            alert(`Plan #${planId} created but scheduling failed. Please schedule it manually from the dashboard.`);
-          }
+              // Now schedule the plan
+              const delaySeconds = interval + ".0";
+              const scheduleResult = await executeTransaction(
+                SCHEDULE_DCA_PLAN_TX,
+                (arg, t) => [
+                  arg(planId, t.UInt64),
+                  arg(delaySeconds, t.UFix64),
+                  arg("1", t.UInt8), // Priority: Medium
+                  arg("9999", t.UInt64) // Execution effort
+                ],
+                500
+              );
 
-          // Reset form
-          setAmountPerInterval("");
-          setMaxExecutions("");
-          resetTransaction();
-        }, 1000);
+              if (scheduleResult.success) {
+                alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}.`);
+              } else {
+                alert(`Handler initialized but scheduling failed. Error: ${scheduleResult.error}`);
+              }
+            } else {
+              alert(`Handler initialization failed. Error: ${handlerResult.error}`);
+            }
+
+            // Reset form
+            setAmountPerInterval("");
+            setMaxExecutions("");
+            resetTransaction();
+          }, 1000);
+        } else {
+          // Handler already initialized, just schedule
+          setTimeout(async () => {
+            const delaySeconds = interval + ".0";
+
+            const scheduleResult = await executeTransaction(
+              SCHEDULE_DCA_PLAN_TX,
+              (arg, t) => [
+                arg(planId, t.UInt64),
+                arg(delaySeconds, t.UFix64),
+                arg("1", t.UInt8), // Priority: Medium
+                arg("9999", t.UInt64) // Execution effort
+              ],
+              500
+            );
+
+            if (scheduleResult.success) {
+              alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}.`);
+            } else {
+              alert(`Plan #${planId} created but scheduling failed. ${scheduleResult.error}`);
+            }
+
+            // Reset form
+            setAmountPerInterval("");
+            setMaxExecutions("");
+            resetTransaction();
+          }, 1000);
+        }
       } else {
         // Fallback if we can't get the plan ID
-        alert("Plan created successfully! Please initialize the handler and schedule it from the dashboard.");
+        alert("Plan created successfully! Please schedule it from the dashboard.");
         setTimeout(() => {
           setAmountPerInterval("");
           setMaxExecutions("");
