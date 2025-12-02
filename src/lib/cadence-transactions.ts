@@ -350,12 +350,12 @@ transaction(
 `;
 
 /**
- * Get all plans for an address
+ * Get all plans for an address (V1 - Emulator)
  *
  * @param address - Account address to query
  * @returns Array of plan details
  */
-export const GET_ALL_PLANS_SCRIPT = `
+export const GET_ALL_PLANS_SCRIPT_V1 = `
 import DCAController from 0xDCAController
 import DCAPlan from 0xDCAPlan
 
@@ -375,12 +375,37 @@ access(all) fun main(address: Address): [DCAPlan.PlanDetails] {
 `;
 
 /**
- * Check if controller is configured
+ * Get all plans for an address (V2 - Mainnet)
+ *
+ * @param address - Account address to query
+ * @returns Array of plan details
+ */
+export const GET_ALL_PLANS_SCRIPT_V2 = `
+import DCAControllerV2 from 0xDCAController
+import DCAPlanV2 from 0xDCAPlan
+
+access(all) fun main(address: Address): [DCAPlanV2.PlanDetails] {
+    let account = getAccount(address)
+
+    let controllerRef = account.capabilities
+        .get<&DCAControllerV2.Controller>(DCAControllerV2.ControllerPublicPath)
+        .borrow()
+
+    if controllerRef == nil {
+        return []
+    }
+
+    return controllerRef!.getAllPlans()
+}
+`;
+
+/**
+ * Check if controller is configured (V1 - Emulator)
  *
  * @param address - Account address to check
  * @returns True if controller exists and is configured
  */
-export const CHECK_CONTROLLER_SCRIPT = `
+export const CHECK_CONTROLLER_SCRIPT_V1 = `
 import DCAController from 0xDCAController
 
 access(all) fun main(address: Address): Bool {
@@ -388,6 +413,30 @@ access(all) fun main(address: Address): Bool {
 
     let controllerRef = account.capabilities
         .get<&DCAController.Controller>(DCAController.ControllerPublicPath)
+        .borrow()
+
+    if controllerRef == nil {
+        return false
+    }
+
+    return controllerRef!.isFullyConfigured()
+}
+`;
+
+/**
+ * Check if controller is configured (V2 - Mainnet)
+ *
+ * @param address - Account address to check
+ * @returns True if controller exists and is configured
+ */
+export const CHECK_CONTROLLER_SCRIPT_V2 = `
+import DCAControllerV2 from 0xDCAController
+
+access(all) fun main(address: Address): Bool {
+    let account = getAccount(address)
+
+    let controllerRef = account.capabilities
+        .get<&DCAControllerV2.Controller>(DCAControllerV2.ControllerPublicPath)
         .borrow()
 
     if controllerRef == nil {
@@ -1222,3 +1271,5 @@ transaction {
 export const SETUP_CONTROLLER_TX = NETWORK === "mainnet" ? SETUP_CONTROLLER_TX_V2 : SETUP_CONTROLLER_TX_V1;
 export const CREATE_PLAN_TX = NETWORK === "mainnet" ? CREATE_PLAN_TX_V2 : CREATE_PLAN_TX_V1;
 export const FUND_FEE_VAULT_TX = NETWORK === "mainnet" ? FUND_FEE_VAULT_TX_V2 : FUND_FEE_VAULT_TX_V1;
+export const GET_ALL_PLANS_SCRIPT = NETWORK === "mainnet" ? GET_ALL_PLANS_SCRIPT_V2 : GET_ALL_PLANS_SCRIPT_V1;
+export const CHECK_CONTROLLER_SCRIPT = NETWORK === "mainnet" ? CHECK_CONTROLLER_SCRIPT_V2 : CHECK_CONTROLLER_SCRIPT_V1;
