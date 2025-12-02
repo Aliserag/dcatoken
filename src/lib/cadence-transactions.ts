@@ -986,29 +986,32 @@ transaction(
 `;
 
 /**
- * Schedule DCA Plan Execution (V2 - Mainnet)
+ * Fund Fee Vault and Schedule DCA Plan (V2 - Mainnet - COMBINED)
+ *
+ * This transaction combines funding and scheduling into one approval.
  *
  * @param planId - ID of the plan to schedule
- * @param delaySeconds - Seconds until execution
+ * @param numExecutions - Number of executions to fund
+ * @param delaySeconds - Seconds until first execution
  * @param priority - 0 = High, 1 = Medium, 2 = Low
- * @param executionEffort - Gas/computation limit (e.g., 9999)
- *
- * Note: V2 uses Manager pattern with ScheduleConfig and DCATransactionData
+ * @param executionEffort - Gas/computation limit (e.g., 5000)
  */
-export const SCHEDULE_DCA_PLAN_TX_V2 = `
+export const FUND_AND_SCHEDULE_PLAN_TX_V2 = `
 import FlowTransactionScheduler from 0xFlowTransactionScheduler
 import FlowTransactionSchedulerUtils from 0xFlowTransactionSchedulerUtils
 import DCATransactionHandlerV2 from 0xDCATransactionHandler
+import DCAControllerV2 from 0xDCAController
 import FlowToken from 0xFlowToken
 import FungibleToken from 0xFungibleToken
 
 transaction(
     planId: UInt64,
+    numExecutions: UInt64,
     delaySeconds: UFix64,
     priority: UInt8,
     executionEffort: UInt64
 ) {
-    prepare(signer: auth(BorrowValue, IssueStorageCapabilityController, SaveValue, GetStorageCapabilityController, PublishCapability) &Account) {
+    prepare(signer: auth(BorrowValue, IssueStorageCapabilityController, SaveValue, GetStorageCapabilityController, PublishCapability, Storage, Capabilities) &Account) {
         // Calculate future execution time
         let future = getCurrentBlock().timestamp + delaySeconds
 
@@ -1019,11 +1022,71 @@ transaction(
                 ? FlowTransactionScheduler.Priority.Medium
                 : FlowTransactionScheduler.Priority.Low
 
+        // === STEP 1: Fund Fee Vault ===
+
+        // Borrow FLOW vault
+        let flowVault = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
+            from: /storage/flowTokenVault
+        ) ?? panic("Could not borrow FLOW vault")
+
+        // Borrow DCA controller
+        let controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
+            from: DCAControllerV2.ControllerStoragePath
+        ) ?? panic("Could not borrow DCA controller V2")
+
+        // Create Manager capability for fee estimation
+        let managerCapForEstimate = signer.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+            FlowTransactionSchedulerUtils.managerStoragePath
+        )
+
+        // Create schedule config for estimation
+        let scheduleConfigForEstimate = DCATransactionHandlerV2.ScheduleConfig(
+            schedulerManagerCap: managerCapForEstimate,
+            priority: pr,
+            executionEffort: executionEffort
+        )
+
+        // Prepare transaction data for estimation
+        let transactionDataForEstimate = DCATransactionHandlerV2.DCATransactionData(
+            planId: planId,
+            scheduleConfig: scheduleConfigForEstimate
+        )
+
+        // Estimate fee for ONE execution
+        let estimate = FlowTransactionScheduler.estimate(
+            data: transactionDataForEstimate,
+            timestamp: future,
+            priority: pr,
+            executionEffort: executionEffort
+        )
+
+        // Get single execution fee and calculate total with 10% buffer
+        let singleFee = estimate.flowFee ?? 0.0
+        let totalFeeNeeded = singleFee * UFix64(numExecutions) * 1.1
+
+        // Check if user has enough FLOW
+        assert(
+            flowVault.balance >= totalFeeNeeded,
+            message: "Insufficient FLOW balance. Need ".concat(totalFeeNeeded.toString()).concat(" FLOW")
+        )
+
+        // Withdraw FLOW and deposit into fee vault
+        let feeDeposit <- flowVault.withdraw(amount: totalFeeNeeded)
+        let feeVaultCap = controllerRef.getFeeVaultCapability()
+            ?? panic("Fee vault capability not configured")
+        let feeVault = feeVaultCap.borrow()
+            ?? panic("Could not borrow fee vault")
+        feeVault.deposit(from: <-feeDeposit)
+
+        log("Deposited ".concat(totalFeeNeeded.toString()).concat(" FLOW into fee vault"))
+
+        // === STEP 2: Schedule Plan ===
+
         // Get the entitled capability for the handler
         var handlerCap: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>? = nil
 
         let controllers = signer.capabilities.storage.getControllers(forPath: /storage/DCATransactionHandlerV2)
-        assert(controllers.length > 0, message: "No handler found. Run init first")
+        assert(controllers.length > 0, message: "No V2 handler found. Run init first")
 
         // Find the correct capability (with Execute entitlement)
         for controller in controllers {
@@ -1372,6 +1435,7 @@ export const CREATE_PLAN_TX = NETWORK === "mainnet" ? CREATE_PLAN_TX_V2 : CREATE
 export const INIT_DCA_HANDLER_TX = NETWORK === "mainnet" ? INIT_DCA_HANDLER_TX_V2 : INIT_DCA_HANDLER_TX_V1;
 export const SCHEDULE_DCA_PLAN_TX = NETWORK === "mainnet" ? SCHEDULE_DCA_PLAN_TX_V2 : SCHEDULE_DCA_PLAN_TX_V1;
 export const FUND_FEE_VAULT_TX = NETWORK === "mainnet" ? FUND_FEE_VAULT_TX_V2 : FUND_FEE_VAULT_TX_V1;
+export const FUND_AND_SCHEDULE_PLAN_TX = NETWORK === "mainnet" ? FUND_AND_SCHEDULE_PLAN_TX_V2 : FUND_AND_SCHEDULE_PLAN_TX_V2; // Combined transaction
 export const PAUSE_PLAN_TX = NETWORK === "mainnet" ? PAUSE_PLAN_TX_V2 : PAUSE_PLAN_TX_V1;
 export const RESUME_PLAN_TX = NETWORK === "mainnet" ? RESUME_PLAN_TX_V2 : RESUME_PLAN_TX_V1;
 export const GET_ALL_PLANS_SCRIPT = NETWORK === "mainnet" ? GET_ALL_PLANS_SCRIPT_V2 : GET_ALL_PLANS_SCRIPT_V1;
