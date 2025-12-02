@@ -8,6 +8,8 @@
 /**
  * Setup DCA Controller
  * Must be run once before creating any plans
+ *
+ * IMPORTANT: If controller already exists, this will update it with the fee vault capability
  */
 export const SETUP_CONTROLLER_TX = `
 import DCAController from 0xDCAController
@@ -17,11 +19,23 @@ import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
 transaction {
     prepare(signer: auth(Storage, Capabilities) &Account) {
-        // Check if controller already exists
+        // Check if controller already exists - if so, update it with fee vault capability
         if signer.storage.borrow<&DCAController.Controller>(
             from: DCAController.ControllerStoragePath
         ) != nil {
-            log("DCA Controller already exists")
+            log("DCA Controller already exists, updating with fee vault capability...")
+
+            let controllerRef = signer.storage.borrow<&DCAController.Controller>(
+                from: DCAController.ControllerStoragePath
+            )!
+
+            // Configure fee vault capability (FLOW) for scheduler fees
+            let feeVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+                /storage/flowTokenVault
+            )
+            controllerRef.setFeeVaultCapability(cap: feeVaultCap)
+
+            log("Controller updated successfully")
             return
         }
 
