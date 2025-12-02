@@ -21,6 +21,7 @@ export interface TransactionResult {
   txId?: string;
   error?: string;
   errorCode?: number;
+  events?: any[]; // Transaction events
 }
 
 export function useTransaction() {
@@ -87,7 +88,11 @@ export function useTransaction() {
         if (sealedTx.statusCode === 0 || sealedTx.statusCode === 4) {
           // Success (UNKNOWN = 0 is actually success in some cases, SEALED = 4)
           setState((prev) => ({ ...prev, status: TransactionStatus.SEALED }));
-          return { success: true, txId: transactionId };
+          return {
+            success: true,
+            txId: transactionId,
+            events: sealedTx.events || []
+          };
         } else {
           // Error
           const errorMsg =
