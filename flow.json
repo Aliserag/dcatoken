@@ -9,7 +9,16 @@
 		"DCAController": "cadence/contracts/DCAController.cdc",
 		"DCAPlan": "cadence/contracts/DCAPlan.cdc",
 		"DCATransactionHandler": "cadence/contracts/DCATransactionHandler.cdc",
-		"DeFiMath": "cadence/contracts/DeFiMath.cdc"
+		"DeFiMath": {
+			"source": "cadence/contracts/DeFiMath.cdc",
+			"aliases": {
+				"mainnet": "ca7ee55e4fc3251a"
+			}
+		},
+		"DCAControllerV2": "cadence/contracts/DCAControllerV2.cdc",
+		"DCAPlanV2": "cadence/contracts/DCAPlanV2.cdc",
+		"DCATransactionHandlerV2": "cadence/contracts/DCATransactionHandlerV2.cdc",
+		"DeFiMathV2": "cadence/contracts/DeFiMathV2.cdc"
 	},
 	"dependencies": {
 		"Burner": {
@@ -243,10 +252,9 @@
 		},
 		"mainnet": {
 			"mainnet-deployer": [
-				"DeFiMath",
-				"DCAPlan",
-				"DCAController",
-				"DCATransactionHandler"
+				"DCAPlanV2",
+				"DCAControllerV2",
+				"DCATransactionHandlerV2"
 			]
 		}
 	}
