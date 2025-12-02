@@ -157,12 +157,12 @@ export function DCADashboard() {
         const totalInvested = parseFloat(cp.totalSourceInvested).toFixed(2);
         const totalAcquired = parseFloat(cp.totalTargetAcquired).toFixed(2);
 
-        // Calculate average price from weighted average (simplified for now)
+        // Calculate average price (FLOW per USDC - how much FLOW you get per USDC spent)
         let avgPrice = "0.00";
-        if (parseFloat(totalAcquired) > 0) {
+        if (parseFloat(totalInvested) > 0) {
           avgPrice = (
-            parseFloat(totalInvested) / parseFloat(totalAcquired)
-          ).toFixed(2);
+            parseFloat(totalAcquired) / parseFloat(totalInvested)
+          ).toFixed(4); // Use 4 decimals for better precision
         }
 
         // Format next execution time
@@ -563,7 +563,7 @@ export function DCADashboard() {
                       <p className="text-lg font-bold font-mono">
                         {plan.avgPrice}
                         <span className="text-sm text-gray-500 ml-1">
-                          USDC/FLOW
+                          FLOW/USDC
                         </span>
                       </p>
                     </div>
