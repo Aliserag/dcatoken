@@ -15,7 +15,7 @@ export const SETUP_CONTROLLER_TX = `
 import DCAController from 0xDCAController
 import FlowToken from 0xFlowToken
 import FungibleToken from 0xFungibleToken
-import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
+import USDCFlow from 0xf1ab99c82dee3526
 
 transaction {
     prepare(signer: auth(Storage, Capabilities) &Account) {
@@ -39,29 +39,29 @@ transaction {
             return
         }
 
-        // Initialize USDT vault if it doesn't exist
-        if signer.storage.borrow<&TeleportedTetherToken.Vault>(
-            from: /storage/teleportedTetherTokenVault
+        // Initialize USDC vault if it doesn't exist
+        if signer.storage.borrow<&USDCFlow.Vault>(
+            from: /storage/usdcFlowVault
         ) == nil {
-            // Create empty USDT vault
-            let usdtVault <- TeleportedTetherToken.createEmptyVault(vaultType: Type<@TeleportedTetherToken.Vault>())
+            // Create empty USDC vault
+            let usdcVault <- USDCFlow.createEmptyVault(vaultType: Type<@USDCFlow.Vault>())
 
             // Save vault to storage
-            signer.storage.save(<-usdtVault, to: /storage/teleportedTetherTokenVault)
+            signer.storage.save(<-usdcVault, to: /storage/usdcFlowVault)
 
             // Create public receiver capability
             let receiverCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
-                /storage/teleportedTetherTokenVault
+                /storage/usdcFlowVault
             )
-            signer.capabilities.publish(receiverCap, at: /public/teleportedTetherTokenReceiver)
+            signer.capabilities.publish(receiverCap, at: /public/usdcFlowReceiver)
 
             // Create public balance capability
-            let balanceCap = signer.capabilities.storage.issue<&TeleportedTetherToken.Vault>(
-                /storage/teleportedTetherTokenVault
+            let balanceCap = signer.capabilities.storage.issue<&USDCFlow.Vault>(
+                /storage/usdcFlowVault
             )
-            signer.capabilities.publish(balanceCap, at: /public/teleportedTetherTokenBalance)
+            signer.capabilities.publish(balanceCap, at: /public/usdcFlowBalance)
 
-            log("USDT vault initialized")
+            log("USDC vault initialized")
         }
 
         // Create controller
@@ -81,9 +81,9 @@ transaction {
             from: DCAController.ControllerStoragePath
         )!
 
-        // Configure source vault capability (USDT)
+        // Configure source vault capability (USDC)
         let sourceVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
-            /storage/teleportedTetherTokenVault
+            /storage/usdcFlowVault
         )
         controllerRef.setSourceVaultCapability(cap: sourceVaultCap)
 
@@ -99,7 +99,7 @@ transaction {
         )
         controllerRef.setFeeVaultCapability(cap: feeVaultCap)
 
-        log("DCA Controller setup complete for USDT → FLOW with scheduler fees")
+        log("DCA Controller setup complete for USDC → FLOW with scheduler fees")
     }
 }
 `;
@@ -118,7 +118,7 @@ import DCAPlan from 0xDCAPlan
 import DCAController from 0xDCAController
 import DeFiMath from 0xDeFiMath
 import FlowToken from 0xFlowToken
-import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
+import USDCFlow from 0xf1ab99c82dee3526
 
 transaction(
     amountPerInterval: UFix64,
@@ -152,9 +152,9 @@ transaction(
         // Calculate first execution time
         let firstExecutionTime = getCurrentBlock().timestamp + UFix64(firstExecutionDelay)
 
-        // Create plan for USDT → FLOW swap
+        // Create plan for USDC → FLOW swap
         let plan <- DCAPlan.createPlan(
-            sourceTokenType: Type<@TeleportedTetherToken.Vault>(),
+            sourceTokenType: Type<@USDCFlow.Vault>(),
             targetTokenType: Type<@FlowToken.Vault>(),
             amountPerInterval: amountPerInterval,
             intervalSeconds: intervalSeconds,
@@ -168,7 +168,7 @@ transaction(
         // Add to controller
         self.controllerRef.addPlan(plan: <-plan)
 
-        log("Created USDT → FLOW DCA Plan #".concat(planId.toString()))
+        log("Created USDC → FLOW DCA Plan #".concat(planId.toString()))
     }
 }
 `;

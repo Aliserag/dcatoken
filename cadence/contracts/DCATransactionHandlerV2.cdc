@@ -6,9 +6,9 @@ import "DeFiMath"
 import "FungibleToken"
 import "FlowToken"
 import "SwapRouter"
-import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
+import USDCFlow from 0xf1ab99c82dee3526
 
-/// DCATransactionHandler: Scheduled transaction handler for DCA execution (Updated with ScheduleConfig)
+/// DCATransactionHandler: Scheduled transaction handler for DCA execution (USDC/FLOW swaps via IncrementFi)
 ///
 /// This contract implements the FlowTransactionScheduler.TransactionHandler interface
 /// to enable autonomous DCA plan execution via Forte Scheduled Transactions.
@@ -275,14 +275,14 @@ access(all) contract DCATransactionHandlerV2 {
             let targetTypeId = planRef.targetTokenType.identifier
 
             let tokenPath: [String] = []
-            if sourceTypeId.contains("TeleportedTetherToken") && targetTypeId.contains("FlowToken") {
-                // USDT → FLOW
-                tokenPath.append("A.cfdd90d4a00f7b5b.TeleportedTetherToken")
+            if sourceTypeId.contains("USDCFlow") && targetTypeId.contains("FlowToken") {
+                // USDC → FLOW
+                tokenPath.append("A.f1ab99c82dee3526.USDCFlow")
                 tokenPath.append("A.1654653399040a61.FlowToken")
-            } else if sourceTypeId.contains("FlowToken") && targetTypeId.contains("TeleportedTetherToken") {
-                // FLOW → USDT
+            } else if sourceTypeId.contains("FlowToken") && targetTypeId.contains("USDCFlow") {
+                // FLOW → USDC
                 tokenPath.append("A.1654653399040a61.FlowToken")
-                tokenPath.append("A.cfdd90d4a00f7b5b.TeleportedTetherToken")
+                tokenPath.append("A.f1ab99c82dee3526.USDCFlow")
             } else {
                 // Unsupported swap path
                 destroy tokensToSwap
@@ -290,7 +290,7 @@ access(all) contract DCATransactionHandlerV2 {
                     success: false,
                     amountIn: nil,
                     amountOut: nil,
-                    errorMessage: "Unsupported token pair. Only USDT ↔ FLOW swaps are currently supported."
+                    errorMessage: "Unsupported token pair. Only USDC ↔ FLOW swaps are currently supported."
                 )
             }
 
