@@ -8,7 +8,7 @@ import "FlowToken"
 import "SwapRouter"
 import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
 
-/// DCATransactionHandler: Scheduled transaction handler for DCA execution
+/// DCATransactionHandler: Scheduled transaction handler for DCA execution (Updated with ScheduleConfig)
 ///
 /// This contract implements the FlowTransactionScheduler.TransactionHandler interface
 /// to enable autonomous DCA plan execution via Forte Scheduled Transactions.
