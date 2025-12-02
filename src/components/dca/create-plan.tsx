@@ -212,9 +212,17 @@ export function CreateDCAPlan() {
     if (result.success) {
       // Auto-schedule the plan after creation
       // Extract plan ID from transaction events
-      const planCreatedEvent = result.events?.find((e: any) =>
-        e.type.includes('DCAPlan.PlanCreated')
-      );
+      console.log("Transaction succeeded! Events:", result.events);
+
+      const planCreatedEvent = result.events?.find((e: any) => {
+        console.log("Checking event:", e.type);
+        return e.type.includes('DCAController.PlanAddedToController') ||
+               e.type.includes('PlanAddedToController') ||
+               e.type.includes('DCAPlan.PlanCreated') ||
+               e.type.includes('PlanCreated');
+      });
+
+      console.log("Found plan event:", planCreatedEvent);
 
       if (planCreatedEvent) {
         const planId = planCreatedEvent.data.planId;

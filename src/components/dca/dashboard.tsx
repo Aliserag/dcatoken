@@ -289,8 +289,10 @@ export function DCADashboard() {
     0
   );
 
-  // Filter to only show scheduled plans (execution count > 0 or status is not active means it was scheduled at some point)
-  const scheduledPlans = plans.filter(plan => plan.isScheduled);
+  // Show all plans (both scheduled and unscheduled)
+  // This allows users to see plans that were just created but not yet scheduled
+  const displayPlans = plans;
+  const scheduledCount = plans.filter(plan => plan.isScheduled).length;
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6">
@@ -300,7 +302,7 @@ export function DCADashboard() {
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
             Active Plans
           </p>
-          <p className="text-3xl font-bold">{scheduledPlans.length}</p>
+          <p className="text-3xl font-bold">{displayPlans.length}</p>
         </div>
 
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
@@ -380,7 +382,7 @@ export function DCADashboard() {
         )}
 
         {/* Empty State */}
-        {!loading && !error && scheduledPlans.length === 0 && (
+        {!loading && !error && displayPlans.length === 0 && (
           <div className="bg-white dark:bg-[#1a1a1a] border-2 border-dashed border-gray-300 dark:border-[#2a2a2a] rounded-xl p-12 text-center">
             <svg
               className="w-16 h-16 mx-auto mb-4 text-gray-400"
@@ -395,18 +397,17 @@ export function DCADashboard() {
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
               />
             </svg>
-            <h3 className="text-xl font-semibold mb-2">No Active DCA Plans</h3>
+            <h3 className="text-xl font-semibold mb-2">No DCA Plans Yet</h3>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Create your first DCA plan to start automating your Flow
-              investments. Plans will appear here once scheduled.
+              Create your first DCA plan to start automating your Flow investments
             </p>
           </div>
         )}
 
         {/* Plans List */}
-        {!loading && !error && scheduledPlans.length > 0 && (
+        {!loading && !error && displayPlans.length > 0 && (
           <div className="space-y-4">
-            {scheduledPlans.map((plan) => {
+            {displayPlans.map((plan) => {
               const progress = getProgressPercentage(plan);
 
               return (
