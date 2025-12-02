@@ -15,7 +15,7 @@ export const SETUP_CONTROLLER_TX = `
 import DCAController from 0xDCAController
 import FlowToken from 0xFlowToken
 import FungibleToken from 0xFungibleToken
-import USDCFlow from 0xf1ab99c82dee3526
+import EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14 from 0x1e4aa0b87d10b141
 
 transaction {
     prepare(signer: auth(Storage, Capabilities) &Account) {
@@ -39,29 +39,33 @@ transaction {
             return
         }
 
-        // Initialize USDC vault if it doesn't exist
-        if signer.storage.borrow<&USDCFlow.Vault>(
-            from: /storage/usdcFlowVault
+        // Initialize EVM bridged token vault if it doesn't exist
+        let vaultStoragePath = /storage/evmVMBridgedTokenVault_f1815bd50389c46847f0bda824ec8da914045d14
+        let vaultPublicPath = /public/evmVMBridgedTokenBalance_f1815bd50389c46847f0bda824ec8da914045d14
+        let vaultReceiverPath = /public/evmVMBridgedTokenReceiver_f1815bd50389c46847f0bda824ec8da914045d14
+
+        if signer.storage.borrow<&EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(
+            from: vaultStoragePath
         ) == nil {
-            // Create empty USDC vault
-            let usdcVault <- USDCFlow.createEmptyVault(vaultType: Type<@USDCFlow.Vault>())
+            // Create empty EVM bridged token vault
+            let evmVault <- EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.createEmptyVault(vaultType: Type<@EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>())
 
             // Save vault to storage
-            signer.storage.save(<-usdcVault, to: /storage/usdcFlowVault)
+            signer.storage.save(<-evmVault, to: vaultStoragePath)
 
             // Create public receiver capability
             let receiverCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
-                /storage/usdcFlowVault
+                vaultStoragePath
             )
-            signer.capabilities.publish(receiverCap, at: /public/usdcFlowReceiver)
+            signer.capabilities.publish(receiverCap, at: vaultReceiverPath)
 
             // Create public balance capability
-            let balanceCap = signer.capabilities.storage.issue<&USDCFlow.Vault>(
-                /storage/usdcFlowVault
+            let balanceCap = signer.capabilities.storage.issue<&EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(
+                vaultStoragePath
             )
-            signer.capabilities.publish(balanceCap, at: /public/usdcFlowBalance)
+            signer.capabilities.publish(balanceCap, at: vaultPublicPath)
 
-            log("USDC vault initialized")
+            log("EVM bridged token vault initialized")
         }
 
         // Create controller
@@ -81,9 +85,9 @@ transaction {
             from: DCAController.ControllerStoragePath
         )!
 
-        // Configure source vault capability (USDC)
+        // Configure source vault capability (EVM bridged token)
         let sourceVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
-            /storage/usdcFlowVault
+            vaultStoragePath
         )
         controllerRef.setSourceVaultCapability(cap: sourceVaultCap)
 
@@ -99,7 +103,7 @@ transaction {
         )
         controllerRef.setFeeVaultCapability(cap: feeVaultCap)
 
-        log("DCA Controller setup complete for USDC → FLOW with scheduler fees")
+        log("DCA Controller setup complete for EVM bridged token → FLOW with scheduler fees")
     }
 }
 `;
@@ -118,7 +122,7 @@ import DCAPlan from 0xDCAPlan
 import DCAController from 0xDCAController
 import DeFiMath from 0xDeFiMath
 import FlowToken from 0xFlowToken
-import USDCFlow from 0xf1ab99c82dee3526
+import EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14 from 0x1e4aa0b87d10b141
 
 transaction(
     amountPerInterval: UFix64,
@@ -152,9 +156,9 @@ transaction(
         // Calculate first execution time
         let firstExecutionTime = getCurrentBlock().timestamp + UFix64(firstExecutionDelay)
 
-        // Create plan for USDC → FLOW swap
+        // Create plan for EVM bridged token → FLOW swap
         let plan <- DCAPlan.createPlan(
-            sourceTokenType: Type<@USDCFlow.Vault>(),
+            sourceTokenType: Type<@EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(),
             targetTokenType: Type<@FlowToken.Vault>(),
             amountPerInterval: amountPerInterval,
             intervalSeconds: intervalSeconds,
@@ -168,7 +172,7 @@ transaction(
         // Add to controller
         self.controllerRef.addPlan(plan: <-plan)
 
-        log("Created USDC → FLOW DCA Plan #".concat(planId.toString()))
+        log("Created EVM bridged token → FLOW DCA Plan #".concat(planId.toString()))
     }
 }
 `;
@@ -468,7 +472,7 @@ transaction(planId: UInt64, delaySeconds: UInt64?) {
 export const GET_TOKEN_BALANCE_SCRIPT = `
 import FungibleToken from 0xFungibleToken
 import FlowToken from 0xFlowToken
-import USDCFlow from 0xf1ab99c82dee3526
+import EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14 from 0x1e4aa0b87d10b141
 
 access(all) fun main(address: Address, tokenType: String): UFix64 {
     let account = getAccount(address)
@@ -483,9 +487,9 @@ access(all) fun main(address: Address, tokenType: String): UFix64 {
         }
 
         return vaultRef!.balance
-    } else if tokenType == "USDC" {
+    } else if tokenType == "USDC" || tokenType == "EVM" {
         let vaultRef = account.capabilities
-            .get<&USDCFlow.Vault>(/public/usdcFlowBalance)
+            .get<&EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault>(/public/evmVMBridgedTokenBalance_f1815bd50389c46847f0bda824ec8da914045d14)
             .borrow()
 
         if vaultRef == nil {
