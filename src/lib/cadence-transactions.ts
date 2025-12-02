@@ -1022,7 +1022,7 @@ transaction(
         // Get the entitled capability for the handler
         var handlerCap: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>? = nil
 
-        let controllers = signer.capabilities.storage.getControllers(forPath: /storage/DCATransactionHandler)
+        let controllers = signer.capabilities.storage.getControllers(forPath: /storage/DCATransactionHandlerV2)
         assert(controllers.length > 0, message: "No handler found. Run init first")
 
         // Find the correct capability (with Execute entitlement)
