@@ -819,8 +819,9 @@ import FungibleToken from 0xFungibleToken
 transaction(planId: UInt64, numExecutions: UInt64, delaySeconds: UFix64, priority: UInt8, executionEffort: UInt64) {
     let flowVault: auth(FungibleToken.Withdraw) &FlowToken.Vault
     let controllerRef: &DCAControllerV2.Controller
+    let managerCap: Capability<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>
 
-    prepare(signer: auth(Storage) &Account) {
+    prepare(signer: auth(Storage, Capabilities) &Account) {
         // Borrow FLOW vault
         self.flowVault = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
             from: /storage/flowTokenVault
@@ -830,13 +831,14 @@ transaction(planId: UInt64, numExecutions: UInt64, delaySeconds: UFix64, priorit
         self.controllerRef = signer.storage.borrow<&DCAControllerV2.Controller>(
             from: DCAControllerV2.ControllerStoragePath
         ) ?? panic("Could not borrow DCA controller")
+
+        // Create Manager capability for fee estimation
+        self.managerCap = signer.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+            FlowTransactionSchedulerUtils.managerStoragePath
+        )
     }
 
     execute {
-        // Get Manager capability from controller
-        let managerCap = signer.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
-            FlowTransactionSchedulerUtils.ManagerStoragePath
-        )
 
         // Convert priority to enum
         let pr = priority == 0 ? FlowTransactionScheduler.Priority.High :
@@ -845,7 +847,7 @@ transaction(planId: UInt64, numExecutions: UInt64, delaySeconds: UFix64, priorit
 
         // Create schedule config
         let scheduleConfig = DCATransactionHandlerV2.ScheduleConfig(
-            schedulerManagerCap: managerCap,
+            schedulerManagerCap: self.managerCap,
             priority: pr,
             executionEffort: executionEffort
         )
