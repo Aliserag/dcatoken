@@ -21,9 +21,9 @@ interface DCAPlan {
   isScheduled: boolean; // Track if plan is scheduled with Flow scheduler
 }
 
-// Cadence plan structure from blockchain
+// Cadence plan structure from blockchain (matches DCAPlan.PlanDetails)
 interface CadencePlanDetails {
-  planId: string;
+  id: string; // Changed from planId to match DCAPlan.PlanDetails struct
   sourceTokenType: string;
   targetTokenType: string;
   amountPerInterval: string;
@@ -33,10 +33,12 @@ interface CadencePlanDetails {
   executionCount: string;
   totalSourceInvested: string;
   totalTargetAcquired: string;
-  weightedAveragePriceFP128: string;
+  avgExecutionPriceFP128: string;
+  avgExecutionPriceDisplay: string;
   status: number;
   nextExecutionTime: string;
   createdAt: string;
+  lastExecutedAt: string | null;
 }
 
 // Countdown component for next execution
@@ -134,6 +136,8 @@ export function DCADashboard() {
 
       // Transform Cadence plan data to UI format
       const transformedPlans: DCAPlan[] = cadencePlans.map((cp) => {
+        console.log("Processing plan - id:", cp.id, "type:", typeof cp.id);
+
         // Convert interval seconds to frequency label
         const intervalDays = Math.floor(
           parseInt(cp.intervalSeconds) / 86400
@@ -172,7 +176,7 @@ export function DCADashboard() {
         const createdAt = createdAtTime.toISOString().split("T")[0];
 
         return {
-          id: parseInt(cp.planId, 10),
+          id: parseInt(cp.id, 10),
           amount: parseFloat(cp.amountPerInterval).toFixed(2),
           frequency,
           totalInvested,
