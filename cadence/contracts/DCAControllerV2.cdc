@@ -231,7 +231,7 @@ access(all) contract DCAControllerV2 {
     }
 
     init() {
-        self.ControllerStoragePath = /storage/DCAController
-        self.ControllerPublicPath = /public/DCAController
+        self.ControllerStoragePath = /storage/DCAControllerV2
+        self.ControllerPublicPath = /public/DCAControllerV2
     }
 }
