@@ -254,7 +254,10 @@ export function DCADashboard() {
             ? parseInt(cp.maxExecutions)
             : null,
           status,
-          nextExecution: cp.nextExecutionTime, // Store timestamp for countdown
+          // Store timestamp for countdown (use "0" for nil/invalid to trigger completed state)
+          nextExecution: (cp.nextExecutionTime && cp.nextExecutionTime !== "nil")
+            ? cp.nextExecutionTime
+            : "0",
           createdAt,
           intervalSeconds: parseInt(cp.intervalSeconds),
           isScheduled: parseInt(cp.executionCount) > 0 || status !== "active", // If executed or not active, assume scheduled
