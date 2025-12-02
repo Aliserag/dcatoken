@@ -46,7 +46,7 @@ export function CreateDCAPlan() {
 
   // Balance state
   const [flowBalance, setFlowBalance] = useState<string>("0.00");
-  const [usdtBalance, setUsdtBalance] = useState<string>("0.00");
+  const [usdcBalance, setUsdcBalance] = useState<string>("0.00");
   const [loadingBalance, setLoadingBalance] = useState(false);
 
   const {
@@ -70,7 +70,7 @@ export function CreateDCAPlan() {
         setUserAddress(null);
         setControllerConfigured(false);
         setFlowBalance("0.00");
-        setUsdtBalance("0.00");
+        setUsdcBalance("0.00");
       }
     });
 
@@ -93,15 +93,15 @@ export function CreateDCAPlan() {
 
       console.log("Fetched tokens from IncrementFi:", tokens);
 
-      // Whitelist only USDT
-      const allowedSymbols = ['USDT'];
+      // Whitelist only USDC
+      const allowedSymbols = ['USDC'];
       const whitelistedTokens = tokens.filter(
         token => allowedSymbols.includes(token.symbol)
       );
 
       setAvailableTokens(whitelistedTokens);
 
-      // Auto-select USDT (only option)
+      // Auto-select USDC (only option)
       const defaultToken = whitelistedTokens[0];
       if (defaultToken) {
         setSelectedToken(defaultToken);
@@ -144,16 +144,16 @@ export function CreateDCAPlan() {
       });
       setFlowBalance(parseFloat(flowBal).toFixed(2));
 
-      // Fetch USDT balance
-      const usdtBal = await fcl.query({
+      // Fetch USDC balance
+      const usdcBal = await fcl.query({
         cadence: GET_TOKEN_BALANCE_SCRIPT,
-        args: (arg, t) => [arg(address, t.Address), arg("USDT", t.String)],
+        args: (arg, t) => [arg(address, t.Address), arg("USDC", t.String)],
       });
-      setUsdtBalance(parseFloat(usdtBal).toFixed(2));
+      setUsdcBalance(parseFloat(usdcBal).toFixed(2));
     } catch (error) {
       console.error("Error fetching balances:", error);
       setFlowBalance("0.00");
-      setUsdtBalance("0.00");
+      setUsdcBalance("0.00");
     } finally {
       setLoadingBalance(false);
     }
@@ -166,9 +166,9 @@ export function CreateDCAPlan() {
       const maxAmount = Math.max(0, flowBal - 0.001).toFixed(2);
       setAmountPerInterval(maxAmount);
     } else {
-      // Token -> FLOW: Use USDT balance, no gas reservation needed
-      const usdtBal = parseFloat(usdtBalance) || 0;
-      setAmountPerInterval(usdtBal.toFixed(2));
+      // Token -> FLOW: Use USDC balance, no gas reservation needed
+      const usdcBal = parseFloat(usdcBalance) || 0;
+      setAmountPerInterval(usdcBal.toFixed(2));
     }
   };
 
@@ -411,7 +411,7 @@ export function CreateDCAPlan() {
               <span className="text-gray-600 dark:text-gray-400">You invest</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">
-                  Balance: {loadingBalance ? "..." : isFlowToToken ? flowBalance : usdtBalance} {isFlowToToken ? "FLOW" : "USDT"}
+                  Balance: {loadingBalance ? "..." : isFlowToToken ? flowBalance : usdcBalance} {isFlowToToken ? "FLOW" : "USDC"}
                 </span>
                 <button
                   type="button"
@@ -472,7 +472,7 @@ export function CreateDCAPlan() {
                         {selectedToken?.symbol.charAt(0) || 'T'}
                       </div>
                     )}
-                    <span className="font-semibold">{selectedToken?.symbol || 'USDT'}</span>
+                    <span className="font-semibold">{selectedToken?.symbol || 'USDC'}</span>
                   </div>
                   <input
                     type="number"
@@ -536,7 +536,7 @@ export function CreateDCAPlan() {
                         {selectedToken?.symbol.charAt(0) || 'T'}
                       </div>
                     )}
-                    <span className="font-semibold">{selectedToken?.symbol || 'USDT'}</span>
+                    <span className="font-semibold">{selectedToken?.symbol || 'USDC'}</span>
                   </div>
                   <div className="flex-1 text-right text-2xl font-semibold text-gray-900 dark:text-gray-100">
                     {estimatedOutput > 0 ? estimatedOutput.toFixed(4) : "0.00"}

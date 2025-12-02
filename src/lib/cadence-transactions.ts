@@ -462,13 +462,13 @@ transaction(planId: UInt64, delaySeconds: UInt64?) {
  * Get token balance for an address
  *
  * @param address - Account address
- * @param tokenType - "FLOW" or "USDT"
+ * @param tokenType - "FLOW" or "USDC"
  * @returns Balance as UFix64
  */
 export const GET_TOKEN_BALANCE_SCRIPT = `
 import FungibleToken from 0xFungibleToken
 import FlowToken from 0xFlowToken
-import TeleportedTetherToken from 0xcfdd90d4a00f7b5b
+import USDCFlow from 0xf1ab99c82dee3526
 
 access(all) fun main(address: Address, tokenType: String): UFix64 {
     let account = getAccount(address)
@@ -483,9 +483,9 @@ access(all) fun main(address: Address, tokenType: String): UFix64 {
         }
 
         return vaultRef!.balance
-    } else if tokenType == "USDT" {
+    } else if tokenType == "USDC" {
         let vaultRef = account.capabilities
-            .get<&TeleportedTetherToken.Vault>(/public/teleportedTetherTokenBalance)
+            .get<&USDCFlow.Vault>(/public/usdcFlowBalance)
             .borrow()
 
         if vaultRef == nil {
