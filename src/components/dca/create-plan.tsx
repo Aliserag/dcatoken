@@ -9,6 +9,8 @@ import {
   CHECK_CONTROLLER_SCRIPT,
   GET_FLOW_SWAPPABLE_TOKENS_SCRIPT,
   GET_TOKEN_BALANCE_SCRIPT,
+  INIT_DCA_HANDLER_TX,
+  SCHEDULE_DCA_PLAN_TX,
 } from "@/lib/cadence-transactions";
 import { TransactionStatus } from "@/config/fcl-config";
 import type { TokenInfo } from "@/lib/token-metadata";
@@ -206,12 +208,51 @@ export function CreateDCAPlan() {
     );
 
     if (result.success) {
-      // Reset form after success
-      setTimeout(() => {
-        setAmountPerInterval("");
-        setMaxExecutions("");
-        resetTransaction();
-      }, 3000);
+      // Auto-schedule the plan after creation
+      // Extract plan ID from transaction events
+      const planCreatedEvent = result.events?.find((e: any) =>
+        e.type.includes('DCAPlan.PlanCreated')
+      );
+
+      if (planCreatedEvent) {
+        const planId = planCreatedEvent.data.planId;
+        console.log("Plan created with ID:", planId);
+
+        // Auto-schedule the plan
+        setTimeout(async () => {
+          const delaySeconds = interval + ".0";
+
+          const scheduleResult = await executeTransaction(
+            SCHEDULE_DCA_PLAN_TX,
+            (arg, t) => [
+              arg(planId, t.UInt64),
+              arg(delaySeconds, t.UFix64),
+              arg("1", t.UInt8), // Priority: Medium
+              arg("9999", t.UInt64) // Execution effort
+            ],
+            500
+          );
+
+          if (scheduleResult.success) {
+            alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}.`);
+          } else {
+            alert(`Plan #${planId} created but scheduling failed. Please schedule it manually from the dashboard.`);
+          }
+
+          // Reset form
+          setAmountPerInterval("");
+          setMaxExecutions("");
+          resetTransaction();
+        }, 1000);
+      } else {
+        // Fallback if we can't get the plan ID
+        alert("Plan created successfully! Please initialize the handler and schedule it from the dashboard.");
+        setTimeout(() => {
+          setAmountPerInterval("");
+          setMaxExecutions("");
+          resetTransaction();
+        }, 2000);
+      }
     }
   };
 
