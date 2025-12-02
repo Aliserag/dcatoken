@@ -171,17 +171,6 @@ export function DCADashboard() {
     return () => unsubscribe();
   }, []);
 
-  // Auto-refresh plans every 15 seconds to detect new executions
-  useEffect(() => {
-    if (!userAddress) return;
-
-    const intervalId = setInterval(() => {
-      fetchPlans(userAddress);
-    }, 15000); // Refresh every 15 seconds
-
-    return () => clearInterval(intervalId);
-  }, [userAddress]);
-
   const fetchPlans = async (address: string) => {
     setLoading(true);
     setError(null);
