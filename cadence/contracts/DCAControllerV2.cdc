@@ -231,7 +231,9 @@ access(all) contract DCAControllerV2 {
     }
 
     init() {
-        self.ControllerStoragePath = /storage/DCAControllerV2
-        self.ControllerPublicPath = /public/DCAControllerV2
+        // NOTE: Storage paths cannot be changed after initial deployment on mainnet
+        // Both V1 and V2 use the same paths, but V2 stores V2.Controller type
+        self.ControllerStoragePath = /storage/DCAController
+        self.ControllerPublicPath = /public/DCAController
     }
 }
