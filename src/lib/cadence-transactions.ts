@@ -502,6 +502,8 @@ access(all) fun main(address: Address, tokenType: String): UFix64 {
 /**
  * Initialize DCA Handler
  * Must be run once before scheduling any plans
+ *
+ * Note: V2 handlers use Manager pattern and don't require setHandlerCapability
  */
 export const INIT_DCA_HANDLER_TX = `
 import DCATransactionHandler from 0xDCATransactionHandler
@@ -537,13 +539,6 @@ transaction() {
                 /storage/DCATransactionHandler
             )
 
-        // Borrow handler to set the capability on itself (required for recursive scheduling)
-        let handlerRef = signer.storage.borrow<&DCATransactionHandler.Handler>(
-            from: /storage/DCATransactionHandler
-        ) ?? panic("Failed to borrow handler after storage")
-
-        handlerRef.setHandlerCapability(cap: handlerCapEntitled)
-
         // Publish public capability for discoverability
         let handlerCapPublic = signer.capabilities.storage
             .issue<&{FlowTransactionScheduler.TransactionHandler}>(
@@ -564,10 +559,13 @@ transaction() {
  * @param delaySeconds - Seconds until execution
  * @param priority - 0 = High, 1 = Medium, 2 = Low
  * @param executionEffort - Gas/computation limit (e.g., 9999)
+ *
+ * Note: V2 uses Manager pattern with ScheduleConfig and DCATransactionData
  */
 export const SCHEDULE_DCA_PLAN_TX = `
 import FlowTransactionScheduler from 0xFlowTransactionScheduler
 import FlowTransactionSchedulerUtils from 0xFlowTransactionSchedulerUtils
+import DCATransactionHandler from 0xDCATransactionHandler
 import FlowToken from 0xFlowToken
 import FungibleToken from 0xFungibleToken
 
@@ -616,13 +614,28 @@ transaction(
             signer.capabilities.publish(managerCapPublic, at: FlowTransactionSchedulerUtils.managerPublicPath)
         }
 
-        // Borrow the manager
+        // Borrow the manager with Owner entitlement
         let manager = signer.storage.borrow<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
             from: FlowTransactionSchedulerUtils.managerStoragePath
         ) ?? panic("Could not borrow manager")
 
-        // Prepare transaction data (planId will be passed to handler)
-        let transactionData: {String: UInt64} = {"planId": planId}
+        // Create Manager capability for autonomous rescheduling
+        let managerCap = signer.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+            FlowTransactionSchedulerUtils.managerStoragePath
+        )
+
+        // Create ScheduleConfig for autonomous rescheduling
+        let scheduleConfig = DCATransactionHandler.createScheduleConfig(
+            schedulerManagerCap: managerCap,
+            priority: pr,
+            executionEffort: executionEffort
+        )
+
+        // Prepare transaction data with plan ID and schedule config
+        let transactionData = DCATransactionHandler.createTransactionData(
+            planId: planId,
+            scheduleConfig: scheduleConfig
+        )
 
         // Estimate fees
         let est = FlowTransactionScheduler.estimate(
@@ -659,6 +672,7 @@ transaction(
         )
 
         log("Scheduled transaction ID: ".concat(transactionId.toString()))
+        log("Plan will autonomously reschedule itself after each execution")
     }
 }
 `;

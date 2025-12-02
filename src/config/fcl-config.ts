@@ -42,6 +42,10 @@ export const CONTRACTS = {
     DCAPlan: "0xca7ee55e4fc3251a",
     DCAController: "0xca7ee55e4fc3251a",
     DCATransactionHandler: "0xca7ee55e4fc3251a",
+    // V2 contracts with autonomous scheduling support
+    DCAPlanV2: "0xca7ee55e4fc3251a",
+    DCAControllerV2: "0xca7ee55e4fc3251a",
+    DCATransactionHandlerV2: "0xca7ee55e4fc3251a",
     FlowToken: "0x1654653399040a61",
     FungibleToken: "0xf233dcee88fe0abe",
     FlowTransactionScheduler: "0xe467b9dd11fa00df",
@@ -111,9 +115,9 @@ export const configureFCL = () => {
       "accessNode.api": "https://rest-mainnet.onflow.org",
       "discovery.wallet": "https://fcl-discovery.onflow.org/authn",
       "0xDeFiMath": getContractAddress("DeFiMath"),
-      "0xDCAPlan": getContractAddress("DCAPlan"),
-      "0xDCAController": getContractAddress("DCAController"),
-      "0xDCATransactionHandler": getContractAddress("DCATransactionHandler"),
+      "0xDCAPlan": NETWORK === "mainnet" ? (getContractAddress as any)("DCAPlanV2") : getContractAddress("DCAPlan"),
+      "0xDCAController": NETWORK === "mainnet" ? (getContractAddress as any)("DCAControllerV2") : getContractAddress("DCAController"),
+      "0xDCATransactionHandler": NETWORK === "mainnet" ? (getContractAddress as any)("DCATransactionHandlerV2") : getContractAddress("DCATransactionHandler"),
       "0xFlowToken": getContractAddress("FlowToken"),
       "0xFungibleToken": getContractAddress("FungibleToken"),
       "0xFlowTransactionScheduler": getContractAddress("FlowTransactionScheduler"),
@@ -124,6 +128,17 @@ export const configureFCL = () => {
       "0xSwapInterfaces": getContractAddress("SwapInterfaces"),
     });
   }
+};
+
+/**
+ * Get contract name based on network
+ * Returns V2 contract names for mainnet, V1 for other networks
+ */
+export const getContractName = (baseContract: string): string => {
+  if (NETWORK === "mainnet" && ["DCAPlan", "DCAController", "DCATransactionHandler"].includes(baseContract)) {
+    return `${baseContract}V2`;
+  }
+  return baseContract;
 };
 
 /**
