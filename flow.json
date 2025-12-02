@@ -7,17 +7,17 @@
 			}
 		},
 		"DCAController": "cadence/contracts/DCAController.cdc",
+		"DCAControllerV2": "cadence/contracts/DCAControllerV2.cdc",
 		"DCAPlan": "cadence/contracts/DCAPlan.cdc",
+		"DCAPlanV2": "cadence/contracts/DCAPlanV2.cdc",
 		"DCATransactionHandler": "cadence/contracts/DCATransactionHandler.cdc",
+		"DCATransactionHandlerV2": "cadence/contracts/DCATransactionHandlerV2.cdc",
 		"DeFiMath": {
 			"source": "cadence/contracts/DeFiMath.cdc",
 			"aliases": {
 				"mainnet": "ca7ee55e4fc3251a"
 			}
 		},
-		"DCAControllerV2": "cadence/contracts/DCAControllerV2.cdc",
-		"DCAPlanV2": "cadence/contracts/DCAPlanV2.cdc",
-		"DCATransactionHandlerV2": "cadence/contracts/DCATransactionHandlerV2.cdc",
 		"DeFiMathV2": "cadence/contracts/DeFiMathV2.cdc"
 	},
 	"dependencies": {
@@ -98,6 +98,7 @@
 			"hash": "b5d6f06dd43e4cee907e08a5bc46df0bb9c2338d806d9d253789aee4c4ac01ad",
 			"aliases": {
 				"emulator": "f8d6e0586b0a20c7",
+				"mainnet": "e467b9dd11fa00df",
 				"testnet": "8c5303eaa26202d6"
 			}
 		},
@@ -234,7 +235,6 @@
 			"address": "ca7ee55e4fc3251a",
 			"key": {
 				"type": "hex",
-				"index": 0,
 				"signatureAlgorithm": "ECDSA_secp256k1",
 				"hashAlgorithm": "SHA2_256",
 				"privateKey": "bfd00d0021661a542cc5aa73d98901722f20e96999c331293a239c218210c257"
