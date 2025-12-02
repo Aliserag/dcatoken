@@ -249,7 +249,7 @@ export function CreateDCAPlan() {
                   arg(planId, t.UInt64),
                   arg(delaySeconds, t.UFix64),
                   arg("1", t.UInt8), // Priority: Medium
-                  arg("9999", t.UInt64) // Execution effort
+                  arg("5000", t.UInt64) // Execution effort (max 7500 for Medium)
                 ],
                 500
               );
@@ -279,7 +279,7 @@ export function CreateDCAPlan() {
                 arg(planId, t.UInt64),
                 arg(delaySeconds, t.UFix64),
                 arg("1", t.UInt8), // Priority: Medium
-                arg("9999", t.UInt64) // Execution effort
+                arg("5000", t.UInt64) // Execution effort (max 7500 for Medium)
               ],
               500
             );
