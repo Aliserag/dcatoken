@@ -217,8 +217,10 @@ export function CreateDCAPlan() {
 
       const planCreatedEvent = result.events?.find((e: any) => {
         console.log("Checking event:", e.type);
-        return e.type.includes('DCAController.PlanAddedToController') ||
+        return e.type.includes('DCAControllerV2.PlanAddedToController') ||
+               e.type.includes('DCAController.PlanAddedToController') ||
                e.type.includes('PlanAddedToController') ||
+               e.type.includes('DCAPlanV2.PlanCreated') ||
                e.type.includes('DCAPlan.PlanCreated') ||
                e.type.includes('PlanCreated');
       });
