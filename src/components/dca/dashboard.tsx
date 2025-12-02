@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import * as fcl from "@onflow/fcl";
-import { GET_ALL_PLANS_SCRIPT, PAUSE_PLAN_TX, RESUME_PLAN_TX } from "@/lib/cadence-transactions";
+import { GET_ALL_PLANS_SCRIPT, PAUSE_PLAN_TX, RESUME_PLAN_TX, INIT_DCA_HANDLER_TX, SCHEDULE_DCA_PLAN_TX } from "@/lib/cadence-transactions";
 import { useTransaction } from "@/hooks/use-transaction";
 
 interface DCAPlan {
@@ -17,6 +17,8 @@ interface DCAPlan {
   status: "active" | "paused" | "completed";
   nextExecution: string;
   createdAt: string;
+  intervalSeconds: number;
+  isScheduled: boolean; // Track if plan is scheduled with Flow scheduler
 }
 
 // Cadence plan structure from blockchain
@@ -170,7 +172,7 @@ export function DCADashboard() {
         const createdAt = createdAtTime.toISOString().split("T")[0];
 
         return {
-          id: parseInt(cp.planId) || 0,
+          id: parseInt(cp.planId, 10),
           amount: parseFloat(cp.amountPerInterval).toFixed(2),
           frequency,
           totalInvested,
@@ -183,6 +185,8 @@ export function DCADashboard() {
           status,
           nextExecution: cp.nextExecutionTime, // Store timestamp for countdown
           createdAt,
+          intervalSeconds: parseInt(cp.intervalSeconds),
+          isScheduled: parseInt(cp.executionCount) > 0 || status !== "active", // If executed or not active, assume scheduled
         };
       });
 
@@ -243,6 +247,39 @@ export function DCADashboard() {
     }
   };
 
+  const handleInitializeHandler = async () => {
+    const result = await executeTransaction(
+      INIT_DCA_HANDLER_TX,
+      (arg, t) => [],
+      500
+    );
+
+    if (result.success) {
+      alert("Handler initialized successfully! You can now schedule plans.");
+    }
+  };
+
+  const handleSchedulePlan = async (planId: number, intervalSeconds: number) => {
+    // Use interval as delay for first execution
+    const delaySeconds = intervalSeconds.toString() + ".0";
+
+    const result = await executeTransaction(
+      SCHEDULE_DCA_PLAN_TX,
+      (arg, t) => [
+        arg(planId.toString(), t.UInt64),
+        arg(delaySeconds, t.UFix64),
+        arg("1", t.UInt8), // Priority: Medium
+        arg("9999", t.UInt64) // Execution effort
+      ],
+      500
+    );
+
+    if (result.success && userAddress) {
+      alert("Plan scheduled successfully! Autonomous execution will begin soon.");
+      setTimeout(() => fetchPlans(userAddress), 2000);
+    }
+  };
+
   const totalInvested = plans.reduce(
     (sum, plan) => sum + parseFloat(plan.totalInvested),
     0
@@ -254,6 +291,24 @@ export function DCADashboard() {
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6">
+      {/* Initialize Handler Button */}
+      {userAddress && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-blue-900 dark:text-blue-100">First Time Setup</h3>
+              <p className="text-sm text-blue-700 dark:text-blue-300">Initialize the scheduled transaction handler to enable autonomous DCA execution</p>
+            </div>
+            <button
+              onClick={handleInitializeHandler}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+            >
+              Initialize Handler
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
@@ -371,7 +426,7 @@ export function DCADashboard() {
 
               return (
                 <div
-                  key={plan.id}
+                  key={`${plan.id}-${plan.createdAt}`}
                   className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6 hover:border-[#00EF8B] transition-all"
                 >
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
@@ -407,7 +462,15 @@ export function DCADashboard() {
                       >
                         {plan.status.toUpperCase()}
                       </span>
-                      {plan.status === "active" && (
+                      {plan.status === "active" && !plan.isScheduled && (
+                        <button
+                          onClick={() => handleSchedulePlan(plan.id, plan.intervalSeconds)}
+                          className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+                        >
+                          Schedule
+                        </button>
+                      )}
+                      {plan.status === "active" && plan.isScheduled && (
                         <button
                           onClick={() => handlePausePlan(plan.id)}
                           className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200 rounded-lg text-sm font-medium transition-colors cursor-pointer"
