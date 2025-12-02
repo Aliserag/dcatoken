@@ -195,7 +195,6 @@ export function DCADashboard() {
 
       // Transform Cadence plan data to UI format
       const transformedPlans: DCAPlan[] = cadencePlans.map((cp) => {
-        console.log("Processing plan - id:", cp.id, "type:", typeof cp.id);
 
         // Convert interval seconds to frequency label
         const intervalDays = Math.floor(
@@ -207,10 +206,11 @@ export function DCADashboard() {
         else if (intervalDays === 14) frequency = "Bi-weekly";
         else if (intervalDays === 30) frequency = "Monthly";
 
-        // Convert status number to label
+        // Convert status number to label (handle both string and number types from FCL)
+        const statusNum = typeof cp.status === 'string' ? parseInt(cp.status) : cp.status;
         let status: "active" | "paused" | "completed" = "active";
-        if (cp.status === 1) status = "paused";
-        else if (cp.status === 2) status = "completed";
+        if (statusNum === 1) status = "paused";
+        else if (statusNum === 2) status = "completed";
 
         // Parse amounts (they come as strings with decimals)
         const totalInvested = parseFloat(cp.totalSourceInvested).toFixed(2);
@@ -255,9 +255,8 @@ export function DCADashboard() {
             : null,
           status,
           // Store timestamp for countdown (use "0" for nil/invalid to trigger completed state)
-          nextExecution: (cp.nextExecutionTime && cp.nextExecutionTime !== "nil")
-            ? cp.nextExecutionTime
-            : "0",
+          // FCL may return null, undefined, "nil", or empty string for optional nil values
+          nextExecution: cp.nextExecutionTime ? String(cp.nextExecutionTime) : "0",
           createdAt,
           intervalSeconds: parseInt(cp.intervalSeconds),
           isScheduled: parseInt(cp.executionCount) > 0 || status !== "active", // If executed or not active, assume scheduled
