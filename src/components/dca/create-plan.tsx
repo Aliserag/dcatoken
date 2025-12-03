@@ -5,12 +5,11 @@ import * as fcl from "@onflow/fcl";
 import { useTransaction } from "@/hooks/use-transaction";
 import {
   SETUP_CONTROLLER_TX,
-  CREATE_PLAN_TX,
   CHECK_CONTROLLER_SCRIPT,
   GET_FLOW_SWAPPABLE_TOKENS_SCRIPT,
   GET_TOKEN_BALANCE_SCRIPT,
   INIT_DCA_HANDLER_TX,
-  FUND_AND_SCHEDULE_PLAN_TX,
+  CREATE_FUND_AND_SCHEDULE_PLAN_TX_V2,
 } from "@/lib/cadence-transactions";
 import { TransactionStatus } from "@/config/fcl-config";
 import type { TokenInfo } from "@/lib/token-metadata";
@@ -187,135 +186,67 @@ export function CreateDCAPlan() {
       return;
     }
 
+    // Check if handler is initialized
+    if (!handlerInitialized) {
+      const shouldInitHandler = window.confirm(
+        "Handler not initialized. Initialize now? (One-time setup, ~0.001 FLOW)"
+      );
+
+      if (!shouldInitHandler) {
+        return;
+      }
+
+      const handlerResult = await executeTransaction(
+        INIT_DCA_HANDLER_TX,
+        (arg, t) => [],
+        500
+      );
+
+      if (!handlerResult.success) {
+        alert(`Handler initialization failed: ${handlerResult.error}`);
+        return;
+      }
+
+      setHandlerInitialized(true);
+      alert("Handler initialized successfully! You can now create your plan.");
+    }
+
+    // Prepare transaction arguments
     const slippageBps = Math.floor(parseFloat(slippage) * 100);
-    // Set first execution delay to match the selected interval
-    // This makes the first execution happen at the same time as subsequent ones
     const firstExecutionDelay = parseInt(interval);
-
-    // Format amount to ensure it has decimal point for UFix64
-    // Convert "1" to "1.0", keep "1.5" as "1.5"
     const formattedAmount = parseFloat(amountPerInterval).toFixed(2);
+    const numExecutionsToFund = maxExecutions || "1000"; // Fund for all executions (or 1000 if unlimited)
 
-    // interval is already in seconds, pass directly to transaction
+    // ALL-IN-ONE: Create + Fund + Schedule in a single transaction!
     const result = await executeTransaction(
-      CREATE_PLAN_TX,
+      CREATE_FUND_AND_SCHEDULE_PLAN_TX_V2,
       (arg, t) => [
-        arg(formattedAmount, t.UFix64),
-        arg(interval, t.UInt64), // interval in seconds
-        arg(slippageBps.toString(), t.UInt64),
-        arg(maxExecutions || null, t.Optional(t.UInt64)),
-        arg(firstExecutionDelay.toString(), t.UInt64),
+        arg(formattedAmount, t.UFix64),                     // amountPerInterval
+        arg(interval, t.UInt64),                            // intervalSeconds
+        arg(slippageBps.toString(), t.UInt64),              // maxSlippageBps
+        arg(maxExecutions || null, t.Optional(t.UInt64)),   // maxExecutions
+        arg(firstExecutionDelay.toString(), t.UInt64),      // firstExecutionDelay
+        arg(numExecutionsToFund, t.UInt64),                 // numExecutionsToFund
+        arg("1", t.UInt8),                                  // priority (Medium)
+        arg("5000", t.UInt64),                              // executionEffort
       ],
       1000
     );
 
-    console.log("CREATE_PLAN_TX result:", result);
-    console.log("result.success:", result.success);
-    console.log("result.events:", result.events);
-
     if (result.success) {
-      // Auto-schedule the plan after creation
-      // Extract plan ID from transaction events
-      console.log("Transaction succeeded! Events:", result.events);
+      const intervalLabel = intervalOptions.find(o => o.value === interval)?.label.toLowerCase();
+      alert(
+        `🎉 Plan created and scheduled successfully!\n\n` +
+        `Autonomous execution will begin in ${intervalLabel}.\n` +
+        `Check the Dashboard to monitor progress.`
+      );
 
-      const planCreatedEvent = result.events?.find((e: any) => {
-        console.log("Checking event:", e.type);
-        return e.type.includes('DCAControllerV2.PlanAddedToController') ||
-               e.type.includes('DCAController.PlanAddedToController') ||
-               e.type.includes('PlanAddedToController') ||
-               e.type.includes('DCAPlanV2.PlanCreated') ||
-               e.type.includes('DCAPlan.PlanCreated') ||
-               e.type.includes('PlanCreated');
-      });
-
-      console.log("Found plan event:", planCreatedEvent);
-
-      if (planCreatedEvent) {
-        const planId = planCreatedEvent.data.planId;
-        console.log("Plan created with ID:", planId);
-
-        // Check if handler is initialized, if not, initialize it first
-        if (!handlerInitialized) {
-          setTimeout(async () => {
-            // Initialize handler
-            const handlerResult = await executeTransaction(
-              INIT_DCA_HANDLER_TX,
-              (arg, t) => [],
-              500
-            );
-
-            if (handlerResult.success) {
-              setHandlerInitialized(true);
-
-              // Fund and schedule in one transaction
-              const numExecutions = maxExecutions || "1000"; // Default to 1000 if unlimited
-              const delaySeconds = interval + ".0";
-
-              const fundAndScheduleResult = await executeTransaction(
-                FUND_AND_SCHEDULE_PLAN_TX,
-                (arg, t) => [
-                  arg(planId, t.UInt64),
-                  arg(numExecutions, t.UInt64),
-                  arg(delaySeconds, t.UFix64),
-                  arg("1", t.UInt8), // Priority: Medium
-                  arg("5000", t.UInt64) // Execution effort
-                ],
-                500
-              );
-
-              if (fundAndScheduleResult.success) {
-                alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}. Check the Dashboard to monitor progress.`);
-              } else {
-                alert(`Handler initialized but funding/scheduling failed. Error: ${fundAndScheduleResult.error}`);
-              }
-            } else {
-              alert(`Handler initialization failed. Error: ${handlerResult.error}`);
-            }
-
-            // Reset form
-            setAmountPerInterval("");
-            setMaxExecutions("");
-            resetTransaction();
-          }, 1000);
-        } else {
-          // Handler already initialized, fund and schedule in one transaction
-          setTimeout(async () => {
-            const delaySeconds = interval + ".0";
-            const numExecutions = maxExecutions || "1000"; // Default to 1000 if unlimited
-
-            const fundAndScheduleResult = await executeTransaction(
-              FUND_AND_SCHEDULE_PLAN_TX,
-              (arg, t) => [
-                arg(planId, t.UInt64),
-                arg(numExecutions, t.UInt64),
-                arg(delaySeconds, t.UFix64),
-                arg("1", t.UInt8), // Priority: Medium
-                arg("5000", t.UInt64) // Execution effort
-              ],
-              500
-            );
-
-            if (fundAndScheduleResult.success) {
-              alert(`Plan #${planId} created and scheduled successfully! Autonomous execution will begin in ${intervalOptions.find(o => o.value === interval)?.label.toLowerCase()}. Check the Dashboard to monitor progress.`);
-            } else {
-              alert(`Plan #${planId} created but funding/scheduling failed. ${fundAndScheduleResult.error}`);
-            }
-
-            // Reset form
-            setAmountPerInterval("");
-            setMaxExecutions("");
-            resetTransaction();
-          }, 1000);
-        }
-      } else {
-        // Fallback if we can't get the plan ID
-        alert("Plan created successfully! Please schedule it from the dashboard.");
-        setTimeout(() => {
-          setAmountPerInterval("");
-          setMaxExecutions("");
-          resetTransaction();
-        }, 2000);
-      }
+      // Reset form
+      setAmountPerInterval("");
+      setMaxExecutions("");
+      resetTransaction();
+    } else {
+      alert(`Failed to create plan: ${result.error}`);
     }
   };
 
