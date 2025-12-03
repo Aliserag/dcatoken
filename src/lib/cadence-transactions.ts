@@ -1396,6 +1396,133 @@ transaction(
 `;
 
 /**
+ * Schedule DCA Plan Execution (V2 - Mainnet) - STANDALONE
+ *
+ * This is the standalone scheduling transaction (no funding).
+ * Use this ONLY when you need to schedule an existing plan manually.
+ * For normal use, prefer CREATE_FUND_AND_SCHEDULE_PLAN_TX_V2 instead.
+ *
+ * @param planId - ID of the plan to schedule
+ * @param delaySeconds - Seconds until execution
+ * @param priority - 0 = High, 1 = Medium, 2 = Low
+ * @param executionEffort - Gas/computation limit (e.g., 9999)
+ */
+export const SCHEDULE_DCA_PLAN_TX_V2 = `
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+import FlowTransactionSchedulerUtils from 0xFlowTransactionSchedulerUtils
+import DCATransactionHandlerV2 from 0xDCATransactionHandler
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
+
+transaction(
+    planId: UInt64,
+    delaySeconds: UFix64,
+    priority: UInt8,
+    executionEffort: UInt64
+) {
+    prepare(signer: auth(BorrowValue, IssueStorageCapabilityController, SaveValue, GetStorageCapabilityController, PublishCapability) &Account) {
+        // Calculate future execution time
+        let future = getCurrentBlock().timestamp + delaySeconds
+
+        // Convert priority to enum
+        let pr = priority == 0
+            ? FlowTransactionScheduler.Priority.High
+            : priority == 1
+                ? FlowTransactionScheduler.Priority.Medium
+                : FlowTransactionScheduler.Priority.Low
+
+        // Get the entitled capability for the V2 handler
+        var handlerCap: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>? = nil
+
+        let controllers = signer.capabilities.storage.getControllers(forPath: /storage/DCATransactionHandlerV2)
+        assert(controllers.length > 0, message: "No V2 handler found. Run init first")
+
+        // Find the correct capability (with Execute entitlement)
+        for controller in controllers {
+            if let cap = controller.capability as? Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}> {
+                handlerCap = cap
+                break
+            }
+        }
+
+        assert(handlerCap != nil, message: "Could not find Execute-entitled handler capability")
+
+        // Create or borrow manager
+        if signer.storage.borrow<&AnyResource>(from: FlowTransactionSchedulerUtils.managerStoragePath) == nil {
+            let manager <- FlowTransactionSchedulerUtils.createManager()
+            signer.storage.save(<-manager, to: FlowTransactionSchedulerUtils.managerStoragePath)
+
+            // Create public capability for the manager
+            let managerCapPublic = signer.capabilities.storage.issue<&{FlowTransactionSchedulerUtils.Manager}>(
+                FlowTransactionSchedulerUtils.managerStoragePath
+            )
+            signer.capabilities.publish(managerCapPublic, at: FlowTransactionSchedulerUtils.managerPublicPath)
+        }
+
+        // Borrow the manager with Owner entitlement
+        let manager = signer.storage.borrow<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+            from: FlowTransactionSchedulerUtils.managerStoragePath
+        ) ?? panic("Could not borrow manager")
+
+        // Create Manager capability for autonomous rescheduling
+        let managerCap = signer.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+            FlowTransactionSchedulerUtils.managerStoragePath
+        )
+
+        // Create ScheduleConfig struct inline (for autonomous rescheduling)
+        let scheduleConfig = DCATransactionHandlerV2.ScheduleConfig(
+            schedulerManagerCap: managerCap,
+            priority: pr,
+            executionEffort: executionEffort
+        )
+
+        // Prepare transaction data with plan ID and schedule config
+        let transactionData = DCATransactionHandlerV2.DCATransactionData(
+            planId: planId,
+            scheduleConfig: scheduleConfig
+        )
+
+        // Estimate fees
+        let est = FlowTransactionScheduler.estimate(
+            data: transactionData,
+            timestamp: future,
+            priority: pr,
+            executionEffort: executionEffort
+        )
+
+        // Verify estimation succeeded
+        assert(
+            est.timestamp != nil || pr == FlowTransactionScheduler.Priority.Low,
+            message: est.error ?? "Estimation failed"
+        )
+
+        // Withdraw fees
+        let vaultRef = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
+            from: /storage/flowTokenVault
+        ) ?? panic("Missing FlowToken vault")
+
+        let feeAmount = est.flowFee ?? 0.0
+        assert(vaultRef.balance >= feeAmount, message: "Insufficient FLOW balance for scheduler fees")
+
+        let fees <- vaultRef.withdraw(amount: feeAmount) as! @FlowToken.Vault
+
+        // Schedule through the manager
+        let transactionId = manager.schedule(
+            handlerCap: handlerCap!,
+            data: transactionData,
+            timestamp: future,
+            priority: pr,
+            executionEffort: executionEffort,
+            fees: <-fees
+        )
+
+        log("Scheduled transaction ID: ".concat(transactionId.toString()))
+        log("Plan will autonomously reschedule itself after each execution")
+    }
+}
+`;
+
+/**
  * Network-aware export for SCHEDULE_DCA_PLAN_TX
  * Automatically selects V1 (emulator/testnet) or V2 (mainnet) based on NEXT_PUBLIC_FLOW_NETWORK
  */
