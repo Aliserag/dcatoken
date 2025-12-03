@@ -186,16 +186,8 @@ export function CreateDCAPlan() {
       return;
     }
 
-    // Check if handler is initialized
+    // Auto-initialize handler if needed (no confirmation)
     if (!handlerInitialized) {
-      const shouldInitHandler = window.confirm(
-        "Handler not initialized. Initialize now? (One-time setup, ~0.001 FLOW)"
-      );
-
-      if (!shouldInitHandler) {
-        return;
-      }
-
       const handlerResult = await executeTransaction(
         INIT_DCA_HANDLER_TX,
         (arg, t) => [],
@@ -208,7 +200,10 @@ export function CreateDCAPlan() {
       }
 
       setHandlerInitialized(true);
-      alert("Handler initialized successfully! You can now create your plan.");
+
+      // Reset transaction state before continuing
+      await new Promise(resolve => setTimeout(resolve, 500));
+      resetTransaction();
     }
 
     // Prepare transaction arguments
@@ -241,9 +236,12 @@ export function CreateDCAPlan() {
         `Check the Dashboard to monitor progress.`
       );
 
-      // Reset form
+      // Reset form and refresh balances
       setAmountPerInterval("");
       setMaxExecutions("");
+      if (userAddress) {
+        fetchBalances(userAddress);
+      }
       resetTransaction();
     } else {
       alert(`Failed to create plan: ${result.error}`);
