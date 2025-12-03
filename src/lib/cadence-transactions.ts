@@ -327,8 +327,11 @@ transaction(
     let manager: auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}
     let priorityEnum: FlowTransactionScheduler.Priority
     let delaySeconds: UFix64
+    let signerAccount: auth(Storage, Capabilities, IssueStorageCapabilityController) &Account
 
     prepare(signer: auth(Storage, Capabilities, BorrowValue, IssueStorageCapabilityController, SaveValue, GetStorageCapabilityController, PublishCapability) &Account) {
+        // Store signer account reference for execute phase
+        self.signerAccount = signer
         // === STEP 1: Validate inputs ===
         assert(amountPerInterval > 0.0, message: "Amount must be positive")
         assert(intervalSeconds > 0, message: "Interval must be positive")
@@ -427,7 +430,7 @@ transaction(
         let future = getCurrentBlock().timestamp + self.delaySeconds
 
         // Create Manager capability for fee estimation and autonomous rescheduling
-        let managerCap = self.controllerRef.owner!.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+        let managerCap = self.signerAccount.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
             FlowTransactionSchedulerUtils.managerStoragePath
         )
 
