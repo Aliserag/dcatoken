@@ -388,6 +388,7 @@ export function DCADashboard() {
   // Show all plans (both scheduled and unscheduled)
   // This allows users to see plans that were just created but not yet scheduled
   const displayPlans = plans;
+  const activePlansCount = plans.filter(plan => plan.status === "active").length;
   const scheduledCount = plans.filter(plan => plan.isScheduled).length;
 
   return (
@@ -398,7 +399,7 @@ export function DCADashboard() {
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
             Active Plans
           </p>
-          <p className="text-3xl font-bold">{displayPlans.length}</p>
+          <p className="text-3xl font-bold">{activePlansCount}</p>
         </div>
 
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
