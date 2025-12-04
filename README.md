@@ -68,16 +68,54 @@ Open [http://localhost:3001](http://localhost:3001) in your browser.
 
 ## 🌐 Mainnet Deployment
 
-**🎉 V2 contracts are now LIVE on Flow Mainnet with autonomous scheduling!**
+**🎉 Multiple Versions Available!**
 
-This application is production-ready with:
-- ✅ **Autonomous DCA Execution** via FlowTransactionScheduler (mainnet supported!)
+This application offers three deployment options:
+
+### V3 - EVM DEX Integration (Latest)
+
+**✨ NEW: FLOW → USDF swaps on Flow EVM DEXes (FlowSwap V3 / PunchSwap V2)**
+
+Features:
+- ✅ **COA-Based Execution** - No MetaMask needed, fully autonomous
+- ✅ **EVM DEX Support** - Swap on FlowSwap V3 with automatic PunchSwap V2 fallback
+- ✅ **FLOW → USDF** - Uses Flow native stablecoin
+- ✅ **User-Configured Slippage** - Per-plan slippage tolerance
+- ✅ **Automatic FLOW ↔ WFLOW** - Via FlowEVMBridge
+- ✅ **Precision Handling** - Automatic rounding to 10^10 wei for Cadence compatibility
+
+**Status**: ✅ Contracts complete, transactions ready, frontend integration documented
+
+See [EVM_INTEGRATION_SUMMARY.md](./EVM_INTEGRATION_SUMMARY.md) for complete technical details.
+
+**V3 Contracts** (Not yet deployed):
+```
+DCAPlanV3                   (pending mainnet deployment)
+DCAControllerV3             (pending mainnet deployment)
+DCATransactionHandlerV3     (pending mainnet deployment)
+UniswapV3SwapperConnector   (pending mainnet deployment)
+EVMTokenRegistry            (pending mainnet deployment)
+DeFiActions                 (pending mainnet deployment)
+```
+
+**Prerequisites**: Users must setup COA (Cadence-Owned Account) before using V3.
+
+See [V3_FRONTEND_INTEGRATION_GUIDE.md](./V3_FRONTEND_INTEGRATION_GUIDE.md) for frontend integration steps.
+
+---
+
+### V2 - IncrementFi Integration (Production)
+
+**🎉 V2 contracts are LIVE on Flow Mainnet with autonomous scheduling!**
+
+Features:
+- ✅ **Autonomous DCA Execution** via FlowTransactionScheduler
 - ✅ **Real USDT ↔ FLOW Swaps** via IncrementFi SwapRouter
 - ✅ **Manager Pattern** for recursive scheduling (no manual intervention)
 - ✅ **Slippage Protection** with configurable basis points
 - ✅ **Production-Grade Security** - Cadence 1.0 best practices
 
-### Deployed Contract Addresses (V2)
+**Deployed Contract Addresses (V2)**
 
 **Mainnet Deployment**: `0xca7ee55e4fc3251a`
 
@@ -91,18 +129,27 @@ FlowTransactionScheduler:   0xe467b9dd11fa00df (Flow core contract)
 FlowTransactionSchedulerUtils: 0xe467b9dd11fa00df (Flow core contract)
 ```
 
-### V2 Features (Mainnet Only)
-
 **Autonomous Scheduling with Manager Pattern:**
 - Plans reschedule themselves after each execution
 - Manager capability passed in transaction data
 - Uses `FlowTransactionSchedulerUtils.Manager.scheduleByHandler()`
 - No user intervention required for recurring DCA
 
-**Why V2?**
-- V1 contracts remain on mainnet (Flow Stable Cadence prevents removal)
-- V2 adds autonomous scheduling support via Manager pattern
-- Emulator/testnet continue using V1 (simpler pattern)
+---
+
+### V1 - Original (Emulator/Testnet)
+
+**Status**: Maintained for emulator/testnet compatibility
+
+Features:
+- ✅ Basic DCA functionality
+- ✅ Manual scheduling (simpler pattern)
+- ✅ Perfect for learning and testing
+
+**Why Multiple Versions?**
+- **V1**: Emulator/testnet - simpler pattern for education
+- **V2**: Mainnet - autonomous scheduling via Manager pattern
+- **V3**: Latest - EVM DEX support with COA-based execution
 
 ### Quick Deploy (For Your Own Instance)
 
@@ -186,33 +233,60 @@ See [FRONTEND_GUIDE.md](./FRONTEND_GUIDE.md) for complete frontend documentation
 dcatoken/
 ├── cadence/
 │   ├── contracts/
-│   │   ├── DeFiMath.cdc                 # FP128 fixed-point math (shared)
-│   │   ├── DCAPlan.cdc                  # V1: DCA plan resource (emulator/testnet)
-│   │   ├── DCAPlanV2.cdc                # V2: Plan with Manager pattern (mainnet)
-│   │   ├── DCAController.cdc            # V1: User management
-│   │   ├── DCAControllerV2.cdc          # V2: Controller for mainnet
-│   │   ├── DCATransactionHandler.cdc    # V1: Scheduler handler
-│   │   └── DCATransactionHandlerV2.cdc  # V2: Autonomous scheduling (mainnet)
+│   │   ├── DeFiMath.cdc                        # FP128 fixed-point math (shared)
+│   │   ├── DCAPlan.cdc                         # V1: DCA plan resource (emulator/testnet)
+│   │   ├── DCAPlanV2.cdc                       # V2: Plan with Manager pattern (mainnet)
+│   │   ├── DCAPlanV3.cdc                       # V3: Plan for EVM DEXes ⚡ NEW
+│   │   ├── DCAController.cdc                   # V1: User management
+│   │   ├── DCAControllerV2.cdc                 # V2: Controller for mainnet
+│   │   ├── DCAControllerV3.cdc                 # V3: Controller with COA capability ⚡ NEW
+│   │   ├── DCATransactionHandler.cdc           # V1: Scheduler handler
+│   │   ├── DCATransactionHandlerV2.cdc         # V2: Autonomous scheduling (mainnet)
+│   │   ├── DCATransactionHandlerV3.cdc         # V3: EVM swap integration ⚡ NEW
+│   │   ├── UniswapV3SwapperConnector.cdc       # V3: Production EVM swapper ⚡ NEW
+│   │   ├── EVMTokenRegistry.cdc                # V3: Cadence ↔ EVM token mappings ⚡ NEW
+│   │   └── interfaces/
+│   │       └── DeFiActions.cdc                 # V3: Composable DeFi interfaces ⚡ NEW
 │   ├── transactions/
-│   │   ├── setup_controller.cdc         # Initialize controller
-│   │   ├── init_dca_handler.cdc         # Initialize handler
-│   │   ├── create_plan.cdc              # Create DCA plan
-│   │   ├── schedule_dca_plan.cdc        # Schedule execution
-│   │   ├── pause_plan.cdc               # Pause plan
-│   │   └── resume_plan.cdc              # Resume plan
+│   │   ├── v1/                                 # V1 transactions (emulator)
+│   │   │   ├── setup_controller.cdc
+│   │   │   ├── create_plan.cdc
+│   │   │   └── ...
+│   │   ├── v2/                                 # V2 transactions (mainnet)
+│   │   │   ├── setup_controller_v2.cdc
+│   │   │   ├── create_fund_activate_plan_v2.cdc
+│   │   │   └── ...
+│   │   └── v3/                                 # V3 transactions (EVM DEXes) ⚡ NEW
+│   │       ├── setup_coa.cdc                   # COA setup for EVM
+│   │       ├── setup_controller_v3.cdc         # Controller with COA capability
+│   │       ├── init_dca_handler_v3.cdc         # Handler initialization
+│   │       └── create_fund_activate_plan_v3.cdc # All-in-one plan creation
 │   └── scripts/
-│       ├── get_all_plans.cdc            # Query all plans
-│       ├── get_plan_details.cdc         # Query plan details
-│       └── check_controller_configured.cdc
-├── src/                                 # Next.js frontend
+│       ├── v1/                                 # V1 scripts
+│       │   ├── get_all_plans.cdc
+│       │   └── ...
+│       ├── v2/                                 # V2 scripts
+│       │   ├── get_all_plans.cdc
+│       │   └── ...
+│       └── v3/                                 # V3 scripts ⚡ NEW
+│           ├── get_all_plans.cdc               # Query V3 plans
+│           ├── check_coa_setup.cdc             # Verify COA configuration
+│           └── check_controller_setup.cdc      # Verify controller + COA
+├── src/                                        # Next.js frontend
 │   ├── config/
-│   │   └── fcl-config.ts                # Network-aware FCL config (auto V2 on mainnet)
-│   └── lib/
-│       └── cadence-transactions.ts      # Transaction templates (V2 Manager pattern)
-├── flow.json                            # V2 deployment config
-├── TESTING_GUIDE.md                     # Complete testing walkthrough
-├── DEPLOYMENT.md                        # Mainnet deployment guide
-└── README.md                            # This file
+│   │   └── fcl-config.ts                       # Network-aware FCL config
+│   ├── lib/
+│   │   └── cadence-transactions.ts             # All V1/V2/V3 templates ⚡ UPDATED
+│   └── components/
+│       └── dca/
+│           ├── create-plan.tsx                 # Plan creation UI
+│           └── dashboard.tsx                   # Plans dashboard
+├── flow.json                                   # Multi-version deployment config
+├── TESTING_GUIDE.md                            # Complete testing walkthrough
+├── DEPLOYMENT.md                               # Mainnet deployment guide
+├── EVM_INTEGRATION_SUMMARY.md                  # V3 technical architecture ⚡ NEW
+├── V3_FRONTEND_INTEGRATION_GUIDE.md            # V3 frontend integration ⚡ NEW
+└── README.md                                   # This file (updated)
 ```
 
 ## 🏗 Architecture
@@ -319,10 +393,19 @@ This project demonstrates best practices from official Flow scaffolds:
 
 ## 📚 Documentation
 
+### Getting Started
 - **[TESTING_GUIDE.md](./TESTING_GUIDE.md)** - Step-by-step emulator testing (START HERE)
-- **[NEXT_STEPS.md](./NEXT_STEPS.md)** - Real IncrementFi swap integration guide
+- **[FRONTEND_GUIDE.md](./FRONTEND_GUIDE.md)** - Frontend integration and usage
+
+### EVM Integration (V3) ⚡ NEW
+- **[EVM_INTEGRATION_SUMMARY.md](./EVM_INTEGRATION_SUMMARY.md)** - Complete V3 architecture and implementation
+- **[V3_FRONTEND_INTEGRATION_GUIDE.md](./V3_FRONTEND_INTEGRATION_GUIDE.md)** - Frontend integration steps for V3
+
+### Development
+- **[NEXT_STEPS.md](./NEXT_STEPS.md)** - Real IncrementFi swap integration guide (V2)
 - **[INTEGRATION_STATUS.md](./INTEGRATION_STATUS.md)** - Project progress tracker
 - **[CLAUDE.md](./CLAUDE.md)** - Development guidelines and Flow Forte best practices
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Mainnet deployment guide
 
 ## 🔧 Configuration
 
