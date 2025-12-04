@@ -1781,6 +1781,491 @@ transaction {
 }
 `;
 
+/**
+ * ============================================
+ * V3 TRANSACTIONS (EVM DEX Integration)
+ * ============================================
+ * V3 enables FLOW → USDF swaps on Flow EVM DEXes (FlowSwap V3 / PunchSwap V2)
+ * using COA-based execution without manual wallet approvals.
+ */
+
+/**
+ * Setup COA (Cadence-Owned Account) for EVM interactions
+ * Must be run first before any V3 setup
+ *
+ * @param fundingAmount - Amount of FLOW to deposit into COA for gas fees (recommended: 1.0 FLOW)
+ */
+export const SETUP_COA_TX_V3 = \`
+import EVM from 0xEVM
+import FungibleToken from 0xFungibleToken
+import FlowToken from 0xFlowToken
+
+transaction(fundingAmount: UFix64) {
+
+    let authAccount: auth(Storage, Capabilities) &Account
+
+    prepare(signer: auth(Storage, Capabilities, BorrowValue) &Account) {
+        self.authAccount = signer
+
+        // Check if COA already exists
+        if signer.storage.type(at: /storage/evm) != nil {
+            let existingCOA = signer.storage.borrow<&EVM.CadenceOwnedAccount>(from: /storage/evm)
+            if existingCOA != nil {
+                log("COA already exists at /storage/evm")
+                return
+            }
+        }
+
+        // Create a new COA
+        let coa <- EVM.createCadenceOwnedAccount()
+
+        // Fund the COA if funding amount is provided (for gas fees)
+        if fundingAmount > 0.0 {
+            let flowVault = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
+                from: /storage/flowTokenVault
+            ) ?? panic("Could not borrow FlowToken vault")
+
+            let fundingVault <- flowVault.withdraw(amount: fundingAmount)
+            coa.deposit(from: <- (fundingVault as! @FlowToken.Vault))
+        }
+
+        // Save the COA to storage
+        signer.storage.save(<-coa, to: /storage/evm)
+
+        // Create public capability for the COA address
+        let coaAddressCap = signer.capabilities.storage.issue<&EVM.CadenceOwnedAccount>(
+            /storage/evm
+        )
+        signer.capabilities.publish(coaAddressCap, at: /public/evm)
+
+        log("COA created successfully")
+    }
+
+    execute {
+        // Verify the COA was created
+        let coa = self.authAccount.storage.borrow<&EVM.CadenceOwnedAccount>(from: /storage/evm)
+            ?? panic("COA was not created properly")
+
+        log("COA EVM Address: ".concat(coa.address().toString()))
+    }
+}
+\`;
+
+/**
+ * Setup DCA Controller V3 with COA capability
+ * Must be run after SETUP_COA_TX_V3
+ */
+export const SETUP_CONTROLLER_TX_V3 = \`
+import DCAControllerV3 from 0xDCAController
+import FungibleToken from 0xFungibleToken
+import FlowToken from 0xFlowToken
+import EVM from 0xEVM
+import EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed from 0x1e4aa0b87d10b141
+
+transaction {
+
+    prepare(signer: auth(Storage, Capabilities, IssueStorageCapabilityController, PublishCapability, SaveValue) &Account) {
+
+        // Check if controller already exists
+        if signer.storage.type(at: DCAControllerV3.ControllerStoragePath) != nil {
+            log("Controller already exists")
+            return
+        }
+
+        // Create controller
+        let controller <- DCAControllerV3.createController()
+
+        // Setup Source Vault Capability (FLOW)
+        let flowVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+            /storage/flowTokenVault
+        )
+        controller.setSourceVaultCapability(cap: flowVaultCap)
+
+        // Setup Target Vault Capability (USDF)
+        if signer.storage.type(at: /storage/EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed) == nil {
+            let usdfVault <- EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed.createEmptyVault(
+                vaultType: Type<@EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed.Vault>()
+            )
+            signer.storage.save(<-usdfVault, to: /storage/EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed)
+
+            let usdfReceiverCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
+                /storage/EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed
+            )
+            signer.capabilities.publish(usdfReceiverCap, at: /public/EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed_receiver)
+
+            log("USDF vault created")
+        }
+
+        let usdfReceiverCap = signer.capabilities.storage.issue<&{FungibleToken.Receiver}>(
+            /storage/EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed
+        )
+        controller.setTargetVaultCapability(cap: usdfReceiverCap)
+
+        // Setup Fee Vault Capability (FLOW)
+        let feeVaultCap = signer.capabilities.storage.issue<auth(FungibleToken.Withdraw) &{FungibleToken.Vault}>(
+            /storage/flowTokenVault
+        )
+        controller.setFeeVaultCapability(cap: feeVaultCap)
+
+        // Setup COA Capability
+        if signer.storage.type(at: /storage/evm) == nil {
+            panic("COA not found. Please run setup_coa.cdc first.")
+        }
+
+        let coaCap = signer.capabilities.storage.issue<auth(EVM.Owner) &EVM.CadenceOwnedAccount>(
+            /storage/evm
+        )
+        controller.setCOACapability(cap: coaCap)
+
+        // Save Controller
+        signer.storage.save(<-controller, to: DCAControllerV3.ControllerStoragePath)
+
+        let controllerCap = signer.capabilities.storage.issue<&DCAControllerV3.Controller>(
+            DCAControllerV3.ControllerStoragePath
+        )
+        signer.capabilities.publish(controllerCap, at: DCAControllerV3.ControllerPublicPath)
+
+        log("DCA Controller V3 created and configured successfully")
+    }
+
+    post {
+        getAccount(signer.address).storage.type(at: DCAControllerV3.ControllerStoragePath) != nil:
+            "Controller was not saved to storage"
+    }
+}
+\`;
+
+/**
+ * Initialize DCA Handler V3
+ * Must be run after SETUP_CONTROLLER_TX_V3
+ */
+export const INIT_DCA_HANDLER_TX_V3 = \`
+import DCATransactionHandlerV3 from 0xDCATransactionHandler
+import DCAControllerV3 from 0xDCAController
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+
+transaction {
+
+    prepare(signer: auth(Storage, Capabilities, IssueStorageCapabilityController, SaveValue) &Account) {
+
+        // Check if handler already exists
+        if signer.storage.type(at: /storage/DCATransactionHandlerV3) != nil {
+            log("Handler already exists")
+            return
+        }
+
+        // Verify controller exists
+        if signer.storage.type(at: DCAControllerV3.ControllerStoragePath) == nil {
+            panic("DCA Controller not found. Please run setup_controller_v3.cdc first.")
+        }
+
+        // Issue controller capability with Owner entitlement for handler
+        let controllerCap = signer.capabilities.storage.issue<auth(DCAControllerV3.Owner) &DCAControllerV3.Controller>(
+            DCAControllerV3.ControllerStoragePath
+        )
+
+        // Create handler with controller capability
+        let handler <- DCATransactionHandlerV3.createHandler(
+            controllerCap: controllerCap
+        )
+
+        // Save handler to storage
+        signer.storage.save(<-handler, to: /storage/DCATransactionHandlerV3)
+
+        log("DCA Transaction Handler V3 created successfully")
+    }
+
+    post {
+        getAccount(signer.address).storage.type(at: /storage/DCATransactionHandlerV3) != nil:
+            "Handler was not saved to storage"
+    }
+}
+\`;
+
+/**
+ * Create, Fund, and Schedule DCA Plan V3 (All-in-One)
+ * Handles FLOW → USDF swaps on EVM DEXes
+ *
+ * @param amountPerInterval - Amount of FLOW to invest per interval
+ * @param intervalSeconds - Time between executions (in seconds)
+ * @param maxSlippageBps - Maximum acceptable slippage in basis points (100 = 1%)
+ * @param maxExecutions - Optional maximum number of executions (nil = unlimited)
+ * @param firstExecutionDelay - Delay before first execution (in seconds)
+ * @param numExecutionsToFund - Number of executions to pre-fund
+ * @param priority - Execution priority (0=High, 1=Medium, 2=Low)
+ * @param executionEffort - Gas limit for execution (recommended: 1000)
+ */
+export const CREATE_FUND_AND_SCHEDULE_PLAN_TX_V3 = \`
+import DCAPlanV3 from 0xDCAPlan
+import DCAControllerV3 from 0xDCAController
+import DCATransactionHandlerV3 from 0xDCATransactionHandler
+import DeFiMath from 0xDeFiMath
+import FlowToken from 0xFlowToken
+import FungibleToken from 0xFungibleToken
+import EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed from 0x1e4aa0b87d10b141
+import FlowTransactionScheduler from 0xFlowTransactionScheduler
+import FlowTransactionSchedulerUtils from 0xFlowTransactionSchedulerUtils
+
+transaction(
+    amountPerInterval: UFix64,
+    intervalSeconds: UInt64,
+    maxSlippageBps: UInt64,
+    maxExecutions: UInt64?,
+    firstExecutionDelay: UInt64,
+    numExecutionsToFund: UInt64,
+    priority: UInt8,
+    executionEffort: UInt64
+) {
+    let controllerRef: &DCAControllerV3.Controller
+    let planId: UInt64
+    let flowVault: auth(FungibleToken.Withdraw) &FlowToken.Vault
+    let handlerCap: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>
+    let manager: auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}
+    let priorityEnum: FlowTransactionScheduler.Priority
+    let delaySeconds: UFix64
+    let signerAccount: auth(Storage, Capabilities, IssueStorageCapabilityController) &Account
+
+    prepare(signer: auth(Storage, Capabilities, BorrowValue, IssueStorageCapabilityController, SaveValue, GetStorageCapabilityController, PublishCapability) &Account) {
+        self.signerAccount = signer
+
+        // Validate inputs
+        assert(amountPerInterval > 0.0, message: "Amount must be positive")
+        assert(intervalSeconds > 0, message: "Interval must be positive")
+        assert(DeFiMath.isValidSlippage(slippageBps: maxSlippageBps), message: "Invalid slippage")
+        assert(firstExecutionDelay > 0, message: "Delay must be positive")
+
+        // Borrow controller V3
+        self.controllerRef = signer.storage.borrow<&DCAControllerV3.Controller>(
+            from: DCAControllerV3.ControllerStoragePath
+        ) ?? panic("DCA Controller V3 not found. Run setup_controller_v3.cdc first")
+
+        // Validate controller is fully configured (including COA)
+        assert(
+            self.controllerRef.isFullyConfigured(),
+            message: "Controller not fully configured. Ensure COA is set up."
+        )
+
+        // Calculate first execution time
+        let firstExecutionTime = getCurrentBlock().timestamp + UFix64(firstExecutionDelay)
+
+        // Create plan for FLOW → USDF swap on EVM
+        let plan <- DCAPlanV3.createPlan(
+            sourceTokenType: Type<@FlowToken.Vault>(),
+            targetTokenType: Type<@EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed.Vault>(),
+            amountPerInterval: amountPerInterval,
+            intervalSeconds: intervalSeconds,
+            maxSlippageBps: maxSlippageBps,
+            maxExecutions: maxExecutions,
+            firstExecutionTime: firstExecutionTime
+        )
+
+        self.planId = plan.id
+        self.controllerRef.addPlan(plan: <-plan)
+
+        log("Created FLOW → USDF DCA Plan V3 #".concat(self.planId.toString()))
+
+        // Borrow FLOW vault
+        self.flowVault = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
+            from: /storage/flowTokenVault
+        ) ?? panic("Could not borrow FLOW vault")
+
+        // Convert priority to enum
+        self.priorityEnum = priority == 0
+            ? FlowTransactionScheduler.Priority.High
+            : priority == 1
+                ? FlowTransactionScheduler.Priority.Medium
+                : FlowTransactionScheduler.Priority.Low
+
+        // Get handler capability
+        var handlerCapTemp: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>? = nil
+
+        let controllers = signer.capabilities.storage.getControllers(forPath: /storage/DCATransactionHandlerV3)
+        assert(controllers.length > 0, message: "No V3 handler found. Run init_dca_handler_v3.cdc first")
+
+        for controller in controllers {
+            if let cap = controller.capability as? Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}> {
+                handlerCapTemp = cap
+                break
+            }
+        }
+
+        assert(handlerCapTemp != nil, message: "Could not find Execute-entitled handler capability")
+        self.handlerCap = handlerCapTemp!
+
+        // Create or borrow manager
+        if signer.storage.borrow<&AnyResource>(from: FlowTransactionSchedulerUtils.managerStoragePath) == nil {
+            let managerResource <- FlowTransactionSchedulerUtils.createManager()
+            signer.storage.save(<-managerResource, to: FlowTransactionSchedulerUtils.managerStoragePath)
+
+            let managerCapPublic = signer.capabilities.storage.issue<&{FlowTransactionSchedulerUtils.Manager}>(
+                FlowTransactionSchedulerUtils.managerStoragePath
+            )
+            signer.capabilities.publish(managerCapPublic, at: FlowTransactionSchedulerUtils.managerPublicPath)
+        }
+
+        self.manager = signer.storage.borrow<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+            from: FlowTransactionSchedulerUtils.managerStoragePath
+        ) ?? panic("Could not borrow manager")
+
+        self.delaySeconds = UFix64(firstExecutionDelay)
+    }
+
+    execute {
+        let future = getCurrentBlock().timestamp + self.delaySeconds
+
+        // Create Manager capability
+        let managerCap = self.signerAccount.capabilities.storage.issue<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>(
+            FlowTransactionSchedulerUtils.managerStoragePath
+        )
+
+        // Create schedule config
+        let scheduleConfig = DCATransactionHandlerV3.ScheduleConfig(
+            schedulerManagerCap: managerCap,
+            priority: self.priorityEnum,
+            executionEffort: executionEffort
+        )
+
+        // Prepare transaction data
+        let transactionData = DCATransactionHandlerV3.DCATransactionData(
+            planId: self.planId,
+            scheduleConfig: scheduleConfig
+        )
+
+        // Estimate fee for ONE execution
+        let estimate = FlowTransactionScheduler.estimate(
+            data: transactionData,
+            timestamp: future,
+            priority: self.priorityEnum,
+            executionEffort: executionEffort
+        )
+
+        // Calculate total fee with 10% buffer
+        let singleFee = estimate.flowFee ?? 0.0
+        let totalFeeNeeded = singleFee * UFix64(numExecutionsToFund) * 1.1
+
+        assert(
+            self.flowVault.balance >= totalFeeNeeded,
+            message: "Insufficient FLOW balance. Need ".concat(totalFeeNeeded.toString()).concat(" FLOW for ").concat(numExecutionsToFund.toString()).concat(" executions")
+        )
+
+        // Fund fee vault
+        let feeDeposit <- self.flowVault.withdraw(amount: totalFeeNeeded)
+        let feeVaultCap = self.controllerRef.getFeeVaultCapability()
+            ?? panic("Fee vault capability not configured")
+        let feeVault = feeVaultCap.borrow()
+            ?? panic("Could not borrow fee vault")
+        feeVault.deposit(from: <-feeDeposit)
+
+        log("Deposited ".concat(totalFeeNeeded.toString()).concat(" FLOW into fee vault"))
+
+        // Verify estimation succeeded
+        assert(
+            estimate.timestamp != nil || self.priorityEnum == FlowTransactionScheduler.Priority.Low,
+            message: estimate.error ?? "Estimation failed"
+        )
+
+        // Withdraw scheduler fees
+        let schedulerFeeAmount = estimate.flowFee ?? 0.0
+        assert(self.flowVault.balance >= schedulerFeeAmount, message: "Insufficient FLOW balance for scheduler fees")
+
+        let schedulerFees <- self.flowVault.withdraw(amount: schedulerFeeAmount) as! @FlowToken.Vault
+
+        // Schedule plan
+        let transactionId = self.manager.schedule(
+            handlerCap: self.handlerCap,
+            data: transactionData,
+            timestamp: future,
+            priority: self.priorityEnum,
+            executionEffort: executionEffort,
+            fees: <-schedulerFees
+        )
+
+        log("Scheduled Plan #".concat(self.planId.toString()).concat(" with transaction ID: ").concat(transactionId.toString()))
+        log("Plan will autonomously reschedule itself after each execution on EVM DEXes")
+    }
+}
+\`;
+
+/**
+ * ============================================
+ * V3 SCRIPTS (EVM DEX Integration)
+ * ============================================
+ */
+
+/**
+ * Get all DCA plans V3 for an address
+ */
+export const GET_ALL_PLANS_SCRIPT_V3 = \`
+import DCAControllerV3 from 0xDCAController
+import DCAPlanV3 from 0xDCAPlan
+
+access(all) fun main(address: Address): [DCAPlanV3.PlanDetails] {
+    let controllerCap = getAccount(address)
+        .capabilities.get<&DCAControllerV3.Controller>(
+            DCAControllerV3.ControllerPublicPath
+        )
+
+    if let controller = controllerCap.borrow() {
+        return controller.getAllPlans()
+    }
+
+    return []
+}
+\`;
+
+/**
+ * Check if COA is set up for an address
+ */
+export const CHECK_COA_SETUP_SCRIPT_V3 = \`
+import EVM from 0xEVM
+
+access(all) struct COAInfo {
+    access(all) let evmAddress: String
+    access(all) let balance: UFix64
+
+    init(evmAddress: String, balance: UFix64) {
+        self.evmAddress = evmAddress
+        self.balance = balance
+    }
+}
+
+access(all) fun main(address: Address): COAInfo? {
+    let coaCap = getAccount(address)
+        .capabilities.get<&EVM.CadenceOwnedAccount>(
+            /public/evm
+        )
+
+    if let coa = coaCap.borrow() {
+        return COAInfo(
+            evmAddress: coa.address().toString(),
+            balance: coa.balance().inFLOW()
+        )
+    }
+
+    return nil
+}
+\`;
+
+/**
+ * Check if controller V3 is fully configured
+ */
+export const CHECK_CONTROLLER_SCRIPT_V3 = \`
+import DCAControllerV3 from 0xDCAController
+
+access(all) fun main(address: Address): Bool {
+    let controllerCap = getAccount(address)
+        .capabilities.get<&DCAControllerV3.Controller>(
+            DCAControllerV3.ControllerPublicPath
+        )
+
+    if let controller = controllerCap.borrow() {
+        return controller.isFullyConfigured()
+    }
+
+    return false
+}
+\`;
+
 // Conditional exports based on network
 export const SETUP_CONTROLLER_TX = NETWORK === "mainnet" ? SETUP_CONTROLLER_TX_V2 : SETUP_CONTROLLER_TX_V1;
 export const CREATE_PLAN_TX = NETWORK === "mainnet" ? CREATE_PLAN_TX_V2 : CREATE_PLAN_TX_V1;
