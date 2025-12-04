@@ -18,7 +18,13 @@
 				"mainnet": "ca7ee55e4fc3251a"
 			}
 		},
-		"DeFiMathV2": "cadence/contracts/DeFiMathV2.cdc"
+		"DeFiMathV2": "cadence/contracts/DeFiMathV2.cdc",
+		"DCAControllerV3": "cadence/contracts/DCAControllerV3.cdc",
+		"DCAPlanV3": "cadence/contracts/DCAPlanV3.cdc",
+		"DCATransactionHandlerV3": "cadence/contracts/DCATransactionHandlerV3.cdc",
+		"UniswapV3SwapperConnector": "cadence/contracts/UniswapV3SwapperConnector.cdc",
+		"EVMTokenRegistry": "cadence/contracts/EVMTokenRegistry.cdc",
+		"DeFiActions": "cadence/contracts/interfaces/DeFiActions.cdc"
 	},
 	"dependencies": {
 		"Burner": {
@@ -28,6 +34,42 @@
 				"emulator": "f8d6e0586b0a20c7",
 				"mainnet": "f233dcee88fe0abe",
 				"testnet": "9a0766d93b6608b7"
+			}
+		},
+		"EVM": {
+			"source": "mainnet://e467b9dd11fa00df.EVM",
+			"hash": "evm-hash-placeholder",
+			"aliases": {
+				"emulator": "f8d6e0586b0a20c7",
+				"mainnet": "e467b9dd11fa00df",
+				"testnet": "8c5303eaa26202d6"
+			}
+		},
+		"FlowEVMBridge": {
+			"source": "mainnet://1e4aa0b87d10b141.FlowEVMBridge",
+			"hash": "bridge-hash-placeholder",
+			"aliases": {
+				"emulator": "f8d6e0586b0a20c7",
+				"mainnet": "1e4aa0b87d10b141",
+				"testnet": "dfc20aee650fcbdf"
+			}
+		},
+		"FlowEVMBridgeConfig": {
+			"source": "mainnet://1e4aa0b87d10b141.FlowEVMBridgeConfig",
+			"hash": "bridge-config-hash-placeholder",
+			"aliases": {
+				"emulator": "f8d6e0586b0a20c7",
+				"mainnet": "1e4aa0b87d10b141",
+				"testnet": "dfc20aee650fcbdf"
+			}
+		},
+		"FlowEVMBridgeUtils": {
+			"source": "mainnet://1e4aa0b87d10b141.FlowEVMBridgeUtils",
+			"hash": "bridge-utils-hash-placeholder",
+			"aliases": {
+				"emulator": "f8d6e0586b0a20c7",
+				"mainnet": "1e4aa0b87d10b141",
+				"testnet": "dfc20aee650fcbdf"
 			}
 		},
 		"DeFiActions": {
