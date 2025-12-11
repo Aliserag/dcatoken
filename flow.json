@@ -12,6 +12,8 @@
 		"DCAPlanV2": "cadence/contracts/DCAPlanV2.cdc",
 		"DCATransactionHandler": "cadence/contracts/DCATransactionHandler.cdc",
 		"DCATransactionHandlerV2": "cadence/contracts/DCATransactionHandlerV2.cdc",
+		"DCATransactionHandlerV2Simple": "cadence/contracts/DCATransactionHandlerV2Simple.cdc",
+		"DCATransactionHandlerV2Loop": "cadence/contracts/DCATransactionHandlerV2Loop.cdc",
 		"DeFiMath": {
 			"source": "cadence/contracts/DeFiMath.cdc",
 			"aliases": {
@@ -24,7 +26,10 @@
 		"DCATransactionHandlerV3": "cadence/contracts/DCATransactionHandlerV3.cdc",
 		"UniswapV3SwapperConnector": "cadence/contracts/UniswapV3SwapperConnector.cdc",
 		"EVMTokenRegistry": "cadence/contracts/EVMTokenRegistry.cdc",
-		"DeFiActions": "cadence/contracts/interfaces/DeFiActions.cdc"
+		"DeFiActions": "cadence/contracts/interfaces/DeFiActions.cdc",
+		"DCAPlanUnified": "cadence/contracts/DCAPlanUnified.cdc",
+		"DCAControllerUnified": "cadence/contracts/DCAControllerUnified.cdc",
+		"DCATransactionHandlerUnified": "cadence/contracts/DCATransactionHandlerUnified.cdc"
 	},
 	"dependencies": {
 		"Burner": {
@@ -70,33 +75,6 @@
 				"emulator": "f8d6e0586b0a20c7",
 				"mainnet": "1e4aa0b87d10b141",
 				"testnet": "dfc20aee650fcbdf"
-			}
-		},
-		"DeFiActions": {
-			"source": "mainnet://92195d814edf9cb0.DeFiActions",
-			"hash": "da752be448f97dec0f1a11051a12a6c851c11de28ac31f240c7f62593b79c717",
-			"aliases": {
-				"emulator": "f8d6e0586b0a20c7",
-				"mainnet": "92195d814edf9cb0",
-				"testnet": "4c2ff9dd03ab442f"
-			}
-		},
-		"DeFiActionsMathUtils": {
-			"source": "mainnet://92195d814edf9cb0.DeFiActionsMathUtils",
-			"hash": "f2ae511846ea9a545380968837f47a4198447c008e575047f3ace3b7cf782067",
-			"aliases": {
-				"emulator": "f8d6e0586b0a20c7",
-				"mainnet": "92195d814edf9cb0",
-				"testnet": "4c2ff9dd03ab442f"
-			}
-		},
-		"DeFiActionsUtils": {
-			"source": "mainnet://92195d814edf9cb0.DeFiActionsUtils",
-			"hash": "f3ee7f02ec7373742172f08302471f7b16c44fc0e8deba1efeb50b4367610224",
-			"aliases": {
-				"emulator": "f8d6e0586b0a20c7",
-				"mainnet": "92195d814edf9cb0",
-				"testnet": "4c2ff9dd03ab442f"
 			}
 		},
 		"FlowFees": {
@@ -296,7 +274,18 @@
 			"mainnet-deployer": [
 				"DCAPlanV2",
 				"DCAControllerV2",
-				"DCATransactionHandlerV2"
+				"DCATransactionHandlerV2",
+				"DCATransactionHandlerV2Simple",
+				"DCATransactionHandlerV2Loop",
+				"EVMTokenRegistry",
+				"DeFiActions",
+				"UniswapV3SwapperConnector",
+				"DCAPlanV3",
+				"DCAControllerV3",
+				"DCATransactionHandlerV3",
+				"DCAPlanUnified",
+				"DCAControllerUnified",
+				"DCATransactionHandlerUnified"
 			]
 		}
 	}

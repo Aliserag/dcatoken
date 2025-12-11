@@ -2,7 +2,18 @@
 
 import { useState, useEffect } from "react";
 import * as fcl from "@onflow/fcl";
-import { GET_ALL_PLANS_SCRIPT, PAUSE_PLAN_TX, RESUME_PLAN_TX, INIT_DCA_HANDLER_TX, SCHEDULE_DCA_PLAN_TX, FUND_FEE_VAULT_TX } from "@/lib/cadence-transactions";
+import {
+  GET_ALL_PLANS_SCRIPT,
+  GET_ALL_PLANS_SCRIPT_V3,
+  GET_ALL_PLANS_SCRIPT_UNIFIED,
+  PAUSE_PLAN_TX,
+  RESUME_PLAN_TX,
+  PAUSE_PLAN_TX_UNIFIED,
+  RESUME_PLAN_TX_UNIFIED,
+  INIT_DCA_HANDLER_TX,
+  FUND_FEE_VAULT_TX,
+  SCHEDULE_DCA_PLAN_TX,
+} from "@/lib/cadence-transactions";
 import { useTransaction } from "@/hooks/use-transaction";
 import { useFlowPrice } from "@/hooks/use-flow-price";
 
@@ -13,6 +24,8 @@ interface DCAPlan {
   totalInvested: string;
   totalAcquired: string;
   avgPrice: string;
+  sourceToken: string;  // Token being spent (e.g., "FLOW" or "USDC")
+  targetToken: string;  // Token being acquired (e.g., "FLOW" or "USDC")
   executionCount: number;
   maxExecutions: number | null;
   status: "active" | "paused" | "completed";
@@ -77,8 +90,12 @@ function CountdownTimer({
       if (difference <= 0) {
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
 
-        // Trigger callback once when countdown hits zero
-        if (!hasTriggered && onCountdownComplete) {
+        // Only trigger callback if recently passed (within 2 minutes) to avoid infinite loops for stalled plans
+        const timeSinceTarget = -difference; // How long ago the target time passed
+        const isRecentlyPassed = timeSinceTarget < 2 * 60 * 1000; // Within 2 minutes
+
+        // Trigger callback once when countdown hits zero (only for recently passed, not stalled)
+        if (!hasTriggered && onCountdownComplete && isRecentlyPassed) {
           setHasTriggered(true);
           // Wait 5 seconds after execution time to allow for blockchain confirmation
           setTimeout(() => {
@@ -122,7 +139,22 @@ function CountdownTimer({
       return <span className="text-sm text-yellow-500">Paused</span>;
     }
 
-    // Plan is active - show executing state
+    // Plan is active - check if it's stalled (execution time passed more than 2 minutes ago)
+    const timestampNum = parseFloat(targetTimestamp);
+    const targetTime = timestampNum * 1000;
+    const timeSinceTarget = Date.now() - targetTime;
+    const isStalled = timeSinceTarget > 2 * 60 * 1000; // More than 2 minutes past execution time
+
+    if (isStalled) {
+      return (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-orange-500">Stalled</span>
+          <span className="text-xs text-gray-500">(check balance/fees)</span>
+        </div>
+      );
+    }
+
+    // Recently hit execution time - show executing state
     return (
       <div className="flex items-center gap-2">
         <span className="text-sm text-[#00EF8B]">Executing...</span>
@@ -178,12 +210,53 @@ export function DCADashboard() {
     setLoading(true);
     setError(null);
     try {
-      const cadencePlans: CadencePlanDetails[] = await fcl.query({
-        cadence: GET_ALL_PLANS_SCRIPT,
-        args: (arg, t) => [arg(address, t.Address)],
-      });
+      // Query V2, V3, and Unified plans in parallel
+      const [v2Plans, v3Plans, unifiedPlans] = await Promise.all([
+        fcl.query({
+          cadence: GET_ALL_PLANS_SCRIPT,
+          args: (arg, t) => [arg(address, t.Address)],
+        }).catch(() => [] as CadencePlanDetails[]),
+        fcl.query({
+          cadence: GET_ALL_PLANS_SCRIPT_V3,
+          args: (arg, t) => [arg(address, t.Address)],
+        }).catch(() => [] as CadencePlanDetails[]),
+        fcl.query({
+          cadence: GET_ALL_PLANS_SCRIPT_UNIFIED,
+          args: (arg, t) => [arg(address, t.Address)],
+        }).catch(() => [] as CadencePlanDetails[]),
+      ]);
 
-      console.log("Fetched plans from blockchain:", cadencePlans);
+      // Merge all plans (V3 offset by 10000, Unified offset by 20000 to avoid conflicts)
+      const cadencePlans: CadencePlanDetails[] = [
+        ...v2Plans,
+        ...v3Plans.map((plan: CadencePlanDetails) => ({
+          ...plan,
+          id: String(parseInt(plan.id) + 10000), // Offset V3 plan IDs
+        })),
+        ...unifiedPlans.map((plan: CadencePlanDetails) => ({
+          ...plan,
+          id: String(parseInt(plan.id) + 20000), // Offset Unified plan IDs
+        })),
+      ];
+
+      console.log("Fetched V2 plans:", v2Plans.length, "V3 plans:", v3Plans.length, "Unified plans:", unifiedPlans.length);
+
+      // Helper to extract token symbol from full type identifier
+      // e.g., "A.1654653399040a61.FlowToken.Vault" -> "FLOW"
+      // e.g., "A.1e4aa0b87d10b141.EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault" -> "USDC"
+      // e.g., "A.1e4aa0b87d10b141.EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed.Vault" -> "USDF"
+      const getTokenSymbol = (typeId: string): string => {
+        if (typeId.includes('FlowToken')) return 'FLOW';
+        // Check USDF first (specific contract identifier)
+        if (typeId.includes('EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed')) return 'USDF';
+        // Check USDC (specific contract identifier)
+        if (typeId.includes('EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14')) return 'USDC';
+        // Fallback for other EVMVMBridgedToken variants
+        if (typeId.includes('EVMVMBridgedToken')) return 'USDC';
+        if (typeId.includes('TeleportedTetherToken')) return 'USDT';
+        if (typeId.includes('FiatToken')) return 'USDC';
+        return 'TOKEN';
+      };
 
       // Transform Cadence plan data to UI format
       const transformedPlans: DCAPlan[] = cadencePlans.map((cp) => {
@@ -234,6 +307,10 @@ export function DCADashboard() {
           ? createdAtTime.toISOString().split("T")[0]
           : "N/A";
 
+        // Extract token symbols from type identifiers
+        const sourceToken = getTokenSymbol(cp.sourceTokenType);
+        const targetToken = getTokenSymbol(cp.targetTokenType);
+
         return {
           id: parseInt(cp.id, 10),
           amount: parseFloat(cp.amountPerInterval).toFixed(2),
@@ -241,6 +318,8 @@ export function DCADashboard() {
           totalInvested,
           totalAcquired,
           avgPrice,
+          sourceToken,
+          targetToken,
           executionCount: parseInt(cp.executionCount) || 0,
           maxExecutions: cp.maxExecutions
             ? parseInt(cp.maxExecutions)
@@ -251,7 +330,8 @@ export function DCADashboard() {
           nextExecution: cp.nextExecutionTime ? String(cp.nextExecutionTime) : "0",
           createdAt,
           intervalSeconds: parseInt(cp.intervalSeconds),
-          isScheduled: parseInt(cp.executionCount) > 0 || status !== "active", // If executed or not active, assume scheduled
+          // Plan is scheduled if: executed at least once, OR has a next execution time set, OR status is not active
+          isScheduled: parseInt(cp.executionCount) > 0 || (cp.nextExecutionTime && parseFloat(cp.nextExecutionTime) > 0) || status !== "active",
         };
       });
 
@@ -372,6 +452,21 @@ export function DCADashboard() {
     }
   };
 
+  // Calculate totals grouped by token type
+  const totalInvestedByToken: Record<string, number> = {};
+  const totalAcquiredByToken: Record<string, number> = {};
+
+  plans.forEach(plan => {
+    const sourceToken = plan.sourceToken || 'TOKEN';
+    const targetToken = plan.targetToken || 'TOKEN';
+    const invested = parseFloat(plan.totalInvested) || 0;
+    const acquired = parseFloat(plan.totalAcquired) || 0;
+
+    totalInvestedByToken[sourceToken] = (totalInvestedByToken[sourceToken] || 0) + invested;
+    totalAcquiredByToken[targetToken] = (totalAcquiredByToken[targetToken] || 0) + acquired;
+  });
+
+  // For backward compatibility and overall stats
   const totalInvested = plans.reduce(
     (sum, plan) => sum + parseFloat(plan.totalInvested),
     0
@@ -380,6 +475,10 @@ export function DCADashboard() {
     (sum, plan) => sum + parseFloat(plan.totalAcquired),
     0
   );
+
+  // Get unique token types for display
+  const investedTokens = Object.keys(totalInvestedByToken);
+  const acquiredTokens = Object.keys(totalAcquiredByToken);
 
   // Calculate total value in USDT for display
   const totalInvestedUSDT = priceData ? totalInvested * priceData.usdt : 0;
@@ -406,28 +505,40 @@ export function DCADashboard() {
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
             Total Invested
           </p>
-          <p className="text-3xl font-bold font-mono">
-            {totalInvested.toFixed(2)}{" "}
-            <span className="text-lg text-gray-500">FLOW</span>
-          </p>
-          {priceData && (
-            <p className="text-sm text-gray-500 mt-1">
-              ≈ ${totalInvestedUSDT.toFixed(2)} USDT
-            </p>
-          )}
+          <div className="space-y-1">
+            {investedTokens.length > 0 ? (
+              investedTokens.map(token => (
+                <p key={token} className="text-2xl font-bold font-mono">
+                  {totalInvestedByToken[token].toFixed(2)}{" "}
+                  <span className={`text-lg ${token === 'FLOW' ? 'text-green-500' : 'text-blue-500'}`}>
+                    {token}
+                  </span>
+                </p>
+              ))
+            ) : (
+              <p className="text-2xl font-bold font-mono text-gray-400">0.00</p>
+            )}
+          </div>
         </div>
 
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
             Total Acquired
           </p>
-          <p className="text-3xl font-bold font-mono">
-            {totalAcquired.toFixed(2)}{" "}
-            <span className="text-lg text-gray-500">USDC</span>
-          </p>
-          <p className="text-sm text-gray-500 mt-1">
-            ≈ ${totalAcquired.toFixed(2)} USD value
-          </p>
+          <div className="space-y-1">
+            {acquiredTokens.length > 0 ? (
+              acquiredTokens.map(token => (
+                <p key={token} className="text-2xl font-bold font-mono">
+                  {totalAcquiredByToken[token].toFixed(2)}{" "}
+                  <span className={`text-lg ${token === 'FLOW' ? 'text-green-500' : 'text-blue-500'}`}>
+                    {token}
+                  </span>
+                </p>
+              ))
+            ) : (
+              <p className="text-2xl font-bold font-mono text-gray-400">0.00</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -540,8 +651,17 @@ export function DCADashboard() {
                       <div>
                         <h3 className="text-xl font-bold">Plan #{plan.id}</h3>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {plan.amount} FLOW · {plan.frequency}
+                          {plan.amount} {plan.sourceToken} · {plan.frequency}
                         </p>
+                        <div className="flex items-center gap-1 text-xs mt-1">
+                          <span className={plan.sourceToken === 'FLOW' ? 'text-green-500 font-medium' : 'text-blue-500 font-medium'}>
+                            {plan.sourceToken}
+                          </span>
+                          <span className="text-gray-400">→</span>
+                          <span className={plan.targetToken === 'FLOW' ? 'text-green-500 font-medium' : 'text-blue-500 font-medium'}>
+                            {plan.targetToken}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -614,13 +734,18 @@ export function DCADashboard() {
                       </p>
                       <p className="text-lg font-bold font-mono">
                         {plan.totalInvested}
-                        <span className="text-sm text-gray-500 ml-1">
-                          FLOW
+                        <span className={`text-sm ml-1 ${plan.sourceToken === 'FLOW' ? 'text-green-500' : 'text-blue-500'}`}>
+                          {plan.sourceToken}
                         </span>
                       </p>
-                      {priceData && parseFloat(plan.totalInvested) > 0 && (
+                      {priceData && parseFloat(plan.totalInvested) > 0 && plan.sourceToken === 'FLOW' && (
                         <p className="text-xs text-gray-500">
                           ≈ ${(parseFloat(plan.totalInvested) * priceData.usdt).toFixed(2)}
+                        </p>
+                      )}
+                      {parseFloat(plan.totalInvested) > 0 && plan.sourceToken === 'USDC' && (
+                        <p className="text-xs text-gray-500">
+                          ≈ ${parseFloat(plan.totalInvested).toFixed(2)} USD
                         </p>
                       )}
                     </div>
@@ -631,9 +756,16 @@ export function DCADashboard() {
                       </p>
                       <p className="text-lg font-bold font-mono">
                         {plan.totalAcquired}
-                        <span className="text-sm text-gray-500 ml-1">USDC</span>
+                        <span className={`text-sm ml-1 ${plan.targetToken === 'FLOW' ? 'text-green-500' : 'text-blue-500'}`}>
+                          {plan.targetToken}
+                        </span>
                       </p>
-                      {parseFloat(plan.totalAcquired) > 0 && (
+                      {priceData && parseFloat(plan.totalAcquired) > 0 && plan.targetToken === 'FLOW' && (
+                        <p className="text-xs text-gray-500">
+                          ≈ ${(parseFloat(plan.totalAcquired) * priceData.usdt).toFixed(2)}
+                        </p>
+                      )}
+                      {parseFloat(plan.totalAcquired) > 0 && plan.targetToken === 'USDC' && (
                         <p className="text-xs text-gray-500">
                           ≈ ${parseFloat(plan.totalAcquired).toFixed(2)} USD
                         </p>
@@ -647,7 +779,7 @@ export function DCADashboard() {
                       <p className="text-lg font-bold font-mono">
                         {plan.avgPrice}
                         <span className="text-sm text-gray-500 ml-1">
-                          USDC/FLOW
+                          {plan.targetToken}/{plan.sourceToken}
                         </span>
                       </p>
                     </div>

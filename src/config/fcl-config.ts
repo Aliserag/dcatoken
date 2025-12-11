@@ -14,6 +14,12 @@ export const CONTRACTS = {
     DCAPlan: "0xf8d6e0586b0a20c7",
     DCAController: "0xf8d6e0586b0a20c7",
     DCATransactionHandler: "0xf8d6e0586b0a20c7",
+    DCAPlanV2: "0xf8d6e0586b0a20c7",
+    DCAControllerV2: "0xf8d6e0586b0a20c7",
+    DCATransactionHandlerV2: "0xf8d6e0586b0a20c7",
+    DCAPlanUnified: "0xf8d6e0586b0a20c7",
+    DCAControllerUnified: "0xf8d6e0586b0a20c7",
+    DCATransactionHandlerUnified: "0xf8d6e0586b0a20c7",
     FlowToken: "0x0ae53cb6e3f42a79",
     FungibleToken: "0xee82856bf20e2aa6",
     FlowTransactionScheduler: "0xf8d6e0586b0a20c7",
@@ -22,12 +28,19 @@ export const CONTRACTS = {
     IncrementFiSwapConnectors: "0xf8d6e0586b0a20c7",
     SwapFactory: "0xf8d6e0586b0a20c7",
     SwapInterfaces: "0xf8d6e0586b0a20c7",
+    EVM: "0xf8d6e0586b0a20c7",
   },
   testnet: {
-    DeFiMath: "", // To be deployed
-    DCAPlan: "", // To be deployed
-    DCAController: "", // To be deployed
-    DCATransactionHandler: "", // To be deployed
+    DeFiMath: "",
+    DCAPlan: "",
+    DCAController: "",
+    DCATransactionHandler: "",
+    DCAPlanV2: "",
+    DCAControllerV2: "",
+    DCATransactionHandlerV2: "",
+    DCAPlanUnified: "",
+    DCAControllerUnified: "",
+    DCATransactionHandlerUnified: "",
     FlowToken: "0x7e60df042a9c0868",
     FungibleToken: "0x9a0766d93b6608b7",
     FlowTransactionScheduler: "0x8c5303eaa26202d6",
@@ -36,16 +49,19 @@ export const CONTRACTS = {
     IncrementFiSwapConnectors: "0x49bae091e5ea16b5",
     SwapFactory: "0xb063c16cac85dbd1",
     SwapInterfaces: "0xb78ef7afa52ff906",
+    EVM: "0x8c5303eaa26202d6",
   },
   mainnet: {
     DeFiMath: "0xca7ee55e4fc3251a",
     DCAPlan: "0xca7ee55e4fc3251a",
     DCAController: "0xca7ee55e4fc3251a",
     DCATransactionHandler: "0xca7ee55e4fc3251a",
-    // V2 contracts with autonomous scheduling support
     DCAPlanV2: "0xca7ee55e4fc3251a",
     DCAControllerV2: "0xca7ee55e4fc3251a",
     DCATransactionHandlerV2: "0xca7ee55e4fc3251a",
+    DCAPlanUnified: "0xca7ee55e4fc3251a",
+    DCAControllerUnified: "0xca7ee55e4fc3251a",
+    DCATransactionHandlerUnified: "0xca7ee55e4fc3251a",
     FlowToken: "0x1654653399040a61",
     FungibleToken: "0xf233dcee88fe0abe",
     FlowTransactionScheduler: "0xe467b9dd11fa00df",
@@ -54,6 +70,7 @@ export const CONTRACTS = {
     IncrementFiSwapConnectors: "0x49bae091e5ea16b5",
     SwapFactory: "0xb063c16cac85dbd1",
     SwapInterfaces: "0xb78ef7afa52ff906",
+    EVM: "0xe467b9dd11fa00df",
   },
 };
 
@@ -86,6 +103,7 @@ export const configureFCL = () => {
       "0xFlowTransactionSchedulerUtils": getContractAddress("FlowTransactionSchedulerUtils"),
       "0xDeFiActions": getContractAddress("DeFiActions"),
       "0xIncrementFiSwapConnectors": getContractAddress("IncrementFiSwapConnectors"),
+      "0xEVM": getContractAddress("EVM"),
     });
   } else if (NETWORK === "testnet") {
     fcl.config({
@@ -106,6 +124,7 @@ export const configureFCL = () => {
       "0xIncrementFiSwapConnectors": getContractAddress("IncrementFiSwapConnectors"),
       "0xSwapFactory": getContractAddress("SwapFactory"),
       "0xSwapInterfaces": getContractAddress("SwapInterfaces"),
+      "0xEVM": getContractAddress("EVM"),
     });
   } else if (NETWORK === "mainnet") {
     fcl.config({
@@ -126,6 +145,7 @@ export const configureFCL = () => {
       "0xIncrementFiSwapConnectors": getContractAddress("IncrementFiSwapConnectors"),
       "0xSwapFactory": getContractAddress("SwapFactory"),
       "0xSwapInterfaces": getContractAddress("SwapInterfaces"),
+      "0xEVM": getContractAddress("EVM"),
     });
   }
 };

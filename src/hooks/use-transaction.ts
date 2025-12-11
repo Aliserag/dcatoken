@@ -44,7 +44,7 @@ export function useTransaction() {
   const executeTransaction = useCallback(
     async (
       cadence: string,
-      args: (arg: typeof fcl.arg, t: typeof fcl.types) => any[],
+      args: (arg: typeof fcl.arg, t: any) => any[],
       limit = 9999
     ): Promise<TransactionResult> => {
       resetTransaction();
@@ -55,9 +55,9 @@ export function useTransaction() {
         const transactionId = await fcl.mutate({
           cadence,
           args,
-          proposer: fcl.authz,
-          payer: fcl.authz,
-          authorizations: [fcl.authz],
+          proposer: fcl.authz as any,
+          payer: fcl.authz as any,
+          authorizations: [fcl.authz as any],
           limit,
         });
 
@@ -85,7 +85,7 @@ export function useTransaction() {
 
         unsub(); // Cleanup subscription
 
-        if (sealedTx.statusCode === 0 || sealedTx.statusCode === 4) {
+        if ((sealedTx.statusCode as number) === 0 || (sealedTx.statusCode as number) === 4) {
           // Success (UNKNOWN = 0 is actually success in some cases, SEALED = 4)
           setState((prev) => ({ ...prev, status: TransactionStatus.SEALED }));
           return {
