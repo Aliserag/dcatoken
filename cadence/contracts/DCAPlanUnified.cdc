@@ -50,9 +50,12 @@ access(all) contract DCAPlanUnified {
         access(all) case Cancelled
     }
 
-    /// Helper to detect EVM-bridged tokens
+    /// Helper to detect tokens that require EVM/UniswapV3 swap path
+    /// Currently only USDF (no IncrementFi liquidity) - USDC uses IncrementFi
     access(all) view fun isEVMToken(tokenType: Type): Bool {
-        return tokenType.identifier.contains("EVMVMBridgedToken")
+        // Only USDF requires EVM path - USDC has IncrementFi liquidity
+        // USDF contract: 0x2aabea2058b5ac2d339b163c6ab6f2b6d53aabed
+        return tokenType.identifier.contains("2aabea2058b5ac2d339b163c6ab6f2b6d53aabed")
     }
 
     access(all) resource Plan {
