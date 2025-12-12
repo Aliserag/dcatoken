@@ -14,6 +14,8 @@
 		"DCATransactionHandlerV2": "cadence/contracts/DCATransactionHandlerV2.cdc",
 		"DCATransactionHandlerV2Simple": "cadence/contracts/DCATransactionHandlerV2Simple.cdc",
 		"DCATransactionHandlerV2Loop": "cadence/contracts/DCATransactionHandlerV2Loop.cdc",
+		"DCATransactionHandlerEVMSimple": "cadence/contracts/DCATransactionHandlerEVMSimple.cdc",
+		"DCATransactionHandlerMinimal": "cadence/contracts/DCATransactionHandlerMinimal.cdc",
 		"DeFiMath": {
 			"source": "cadence/contracts/DeFiMath.cdc",
 			"aliases": {
@@ -29,7 +31,11 @@
 		"DeFiActions": "cadence/contracts/interfaces/DeFiActions.cdc",
 		"DCAPlanUnified": "cadence/contracts/DCAPlanUnified.cdc",
 		"DCAControllerUnified": "cadence/contracts/DCAControllerUnified.cdc",
-		"DCATransactionHandlerUnified": "cadence/contracts/DCATransactionHandlerUnified.cdc"
+		"DCATransactionHandlerUnified": "cadence/contracts/DCATransactionHandlerUnified.cdc",
+		"DCATransactionHandlerUnifiedSimple": "cadence/contracts/DCATransactionHandlerUnifiedSimple.cdc",
+		"DCATransactionHandlerEVMMinimal": "cadence/contracts/DCATransactionHandlerEVMMinimal.cdc",
+		"DCATransactionHandlerEVMLoop": "cadence/contracts/DCATransactionHandlerEVMLoop.cdc",
+		"UniswapV3SwapperConnectorV3": "cadence/contracts/UniswapV3SwapperConnectorV3.cdc"
 	},
 	"dependencies": {
 		"Burner": {
@@ -255,9 +261,10 @@
 			"address": "ca7ee55e4fc3251a",
 			"key": {
 				"type": "hex",
-				"signatureAlgorithm": "ECDSA_secp256k1",
-				"hashAlgorithm": "SHA2_256",
-				"privateKey": "bfd00d0021661a542cc5aa73d98901722f20e96999c331293a239c218210c257"
+				"index": 1,
+				"signatureAlgorithm": "ECDSA_P256",
+				"hashAlgorithm": "SHA3_256",
+				"privateKey": "${PRIVATE_KEY_MAINNET}"
 			}
 		}
 	},
@@ -285,7 +292,13 @@
 				"DCATransactionHandlerV3",
 				"DCAPlanUnified",
 				"DCAControllerUnified",
-				"DCATransactionHandlerUnified"
+				"DCATransactionHandlerUnified",
+				"DCATransactionHandlerEVMSimple",
+				"DCATransactionHandlerMinimal",
+				"DCATransactionHandlerUnifiedSimple",
+				"DCATransactionHandlerEVMMinimal",
+				"DCATransactionHandlerEVMLoop",
+				"UniswapV3SwapperConnectorV3"
 			]
 		}
 	}
