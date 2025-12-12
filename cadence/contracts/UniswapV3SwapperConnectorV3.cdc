@@ -1,13 +1,12 @@
-import FungibleToken from "FungibleToken"
-import FlowToken from "FlowToken"
-import EVM from "EVM"
-import Burner from "Burner"
-import FlowEVMBridgeUtils from "FlowEVMBridgeUtils"
-import FlowEVMBridgeConfig from "FlowEVMBridgeConfig"
+import FungibleToken from 0xf233dcee88fe0abe
+import FlowToken from 0x1654653399040a61
+import EVM from 0xe467b9dd11fa00df
+import Burner from 0xf233dcee88fe0abe
+import FlowEVMBridgeUtils from 0x1e4aa0b87d10b141
+import FlowEVMBridgeConfig from 0x1e4aa0b87d10b141
+import DeFiActions from 0xca7ee55e4fc3251a
 
-import DeFiActions from "DeFiActions"
-
-/// UniswapV3SwapperConnector
+/// UniswapV3SwapperConnectorV3
 ///
 /// DeFiActions Swapper connector for Uniswap V3 routers on Flow EVM.
 /// Based on the official FlowActions UniswapV3SwapConnectors pattern.
@@ -15,7 +14,7 @@ import DeFiActions from "DeFiActions"
 /// Supports single-hop and multi-hop swaps using exactInput with proper
 /// FlowEVMBridge integration for token bridging.
 ///
-access(all) contract UniswapV3SwapperConnector {
+access(all) contract UniswapV3SwapperConnectorV3 {
 
     /// Events
     access(all) event SwapperCreated(
@@ -173,6 +172,9 @@ access(all) contract UniswapV3SwapperConnector {
         /// COA capability for EVM interactions
         access(self) let coaCapability: Capability<auth(EVM.Owner) &EVM.CadenceOwnedAccount>
 
+        /// Track last execution effort (gas used)
+        access(self) var lastGasUsed: UInt64
+
         init(
             routerAddress: EVM.EVMAddress,
             quoterAddress: EVM.EVMAddress,
@@ -187,10 +189,6 @@ access(all) contract UniswapV3SwapperConnector {
                 tokenPath.length >= 2: "tokenPath must contain at least two addresses"
                 feePath.length == tokenPath.length - 1: "feePath length must be tokenPath.length - 1"
                 coaCapability.check(): "Invalid COA Capability"
-                FlowEVMBridgeConfig.getTypeAssociated(with: tokenPath[0]) == inVaultType:
-                    "inVaultType must be associated with tokenPath[0] in FlowEVMBridgeConfig"
-                FlowEVMBridgeConfig.getTypeAssociated(with: tokenPath[tokenPath.length - 1]) == outVaultType:
-                    "outVaultType must be associated with tokenPath[last] in FlowEVMBridgeConfig"
             }
             self.routerAddress = routerAddress
             self.quoterAddress = quoterAddress
@@ -200,6 +198,7 @@ access(all) contract UniswapV3SwapperConnector {
             self.inVaultType = inVaultType
             self.outVaultType = outVaultType
             self.coaCapability = coaCapability
+            self.lastGasUsed = 0
         }
 
         /// Build V3 path bytes: token0 + fee0 + token1 + fee1 + token2 ...
@@ -234,7 +233,6 @@ access(all) contract UniswapV3SwapperConnector {
 
         /// Execute swap on Uniswap V3 via exactInput
         /// Uses FlowEVMBridge for token bridging - the bridge handles FLOW↔WFLOW automatically
-        /// since WFLOW is associated with FlowToken.Vault in FlowEVMBridgeConfig
         access(all) fun swap(
             inVault: @{FungibleToken.Vault},
             quote: DeFiActions.Quote
@@ -249,51 +247,32 @@ access(all) contract UniswapV3SwapperConnector {
             let inToken = self.tokenPath[0]
             let outToken = self.tokenPath[self.tokenPath.length - 1]
 
-            // EVM requires balances to be divisible by 10^10 wei for Cadence compatibility.
-            // Any amount with finer precision than 10^-8 (Cadence's precision) will fail.
-            //
-            // The fix: Round DOWN to nearest amount that's cleanly representable.
-            // 1. Convert Cadence amount to EVM wei
-            // 2. Round down to nearest 10^10 (floor division then multiply)
-            // 3. Convert back to Cadence
-            //
-            // This ensures the amount survives the Cadence↔EVM round-trip without rounding errors.
-
-            // Step 1: Convert to EVM wei
+            // Round DOWN to nearest 10^10 wei (Cadence-compatible precision)
             let evmWei = FlowEVMBridgeUtils.convertCadenceAmountToERC20Amount(
                 originalAmount,
                 erc20Address: inToken
             )
 
-            // Step 2: Round DOWN to nearest 10^10 wei (Cadence-compatible precision)
-            // This is critical: balance % 10^10 must equal 0 for the bridge to accept it
             let precision: UInt256 = 10_000_000_000 // 10^10
             let cleanWei = (evmWei / precision) * precision
 
-            // Validate input amount is large enough for EVM bridging
-            // If cleanWei is 0, the amount is too small to bridge
-            assert(
-                cleanWei > 0,
-                message: "Input amount too small for EVM swap. Amount "
-                    .concat(originalAmount.toString())
-                    .concat(" converts to ")
-                    .concat(evmWei.toString())
-                    .concat(" wei which rounds to 0. Minimum ~0.00000001 tokens required for EVM swaps.")
-            )
-
-            // Step 3: Convert clean wei back to Cadence amount
             let cleanAmount = FlowEVMBridgeUtils.convertERC20AmountToCadenceAmount(
                 cleanWei,
                 erc20Address: inToken
             )
 
-            // Use the clean amount (may be slightly less than original due to rounding)
             let amountIn = cleanAmount > 0.0 ? cleanAmount : originalAmount
 
-            // Move the vault - we'll use the full amount since precision is handled by the bridge
-            let vaultToBridge <- inVault
+            // Withdraw only the clean amount from the vault
+            var vaultToBridge: @{FungibleToken.Vault}? <- nil
+            if amountIn < originalAmount && amountIn > 0.0 {
+                vaultToBridge <-! inVault.withdraw(amount: amountIn)
+                destroy inVault
+            } else {
+                vaultToBridge <-! inVault
+            }
 
-            // Convert amounts to EVM format (18 decimals)
+            // Convert amounts to EVM format
             let evmAmountIn = FlowEVMBridgeUtils.convertCadenceAmountToERC20Amount(
                 amountIn,
                 erc20Address: inToken
@@ -304,33 +283,32 @@ access(all) contract UniswapV3SwapperConnector {
             )
 
             // Calculate bridge fee (2x for deposit + withdraw)
+            let bridgeFee = 2.0 * FlowEVMBridgeUtils.calculateBridgeFee(bytes: 256)
             let bridgeFeeBalance = EVM.Balance(attoflow: 0)
-            bridgeFeeBalance.setFLOW(flow: 2.0 * FlowEVMBridgeUtils.calculateBridgeFee(bytes: 256))
+            bridgeFeeBalance.setFLOW(flow: bridgeFee)
+
+            // Check COA balance for fees
+            let coaBalance = coa.balance()
+            let requiredAttoflow = bridgeFeeBalance.attoflow
+
+            if coaBalance.attoflow < requiredAttoflow {
+                if self.inVaultType == Type<@FlowToken.Vault>() {
+                    let feeDeposit = 0.02
+                    var tempVault <- vaultToBridge <- nil
+                    let unwrappedVault <- tempVault!
+                    let feeFunding <- unwrappedVault.withdraw(amount: feeDeposit)
+                    vaultToBridge <-! unwrappedVault
+                    coa.deposit(from: <-(feeFunding as! @FlowToken.Vault))
+                } else {
+                    panic("COA has insufficient FLOW for bridge fees. Please fund your COA.")
+                }
+            }
+
             let feeVault <- coa.withdraw(balance: bridgeFeeBalance)
             let feeVaultRef = &feeVault as auth(FungibleToken.Withdraw) &{FungibleToken.Vault}
 
-            // Bridge input tokens to EVM (now with safe amount)
-            coa.depositTokens(vault: <-vaultToBridge, feeProvider: feeVaultRef)
-
-            // If input is FlowToken (WFLOW), we need to wrap native FLOW to WFLOW ERC20
-            // The bridge gives us native balance, but DEXes need the WFLOW ERC20 token
-            let wflowAddress = UniswapV3SwapperConnector.wflowAddress
-            if inToken.toString().toLower() == wflowAddress.toString().toLower() {
-                // Wrap native FLOW to WFLOW by calling WFLOW.deposit() with value
-                let wrapData = EVM.encodeABIWithSignature("deposit()", [])
-                let wrapValue = EVM.Balance(attoflow: 0)
-                wrapValue.setFLOW(flow: amountIn)  // Send native FLOW as value
-
-                let wrapResult = coa.call(
-                    to: wflowAddress,
-                    data: wrapData,
-                    gasLimit: 100_000,
-                    value: wrapValue
-                )
-                if wrapResult.status != EVM.Status.successful {
-                    panic("Failed to wrap FLOW to WFLOW: ".concat(wrapResult.errorMessage))
-                }
-            }
+            // Bridge input tokens to EVM
+            coa.depositTokens(vault: <-vaultToBridge!, feeProvider: feeVaultRef)
 
             // Build V3 path bytes
             let pathBytes = self.buildPathBytes(reverse: false)
@@ -350,28 +328,20 @@ access(all) contract UniswapV3SwapperConnector {
                 panic("Failed to approve router: ".concat(approveResult.errorMessage))
             }
 
-            // Use the minAmount from quote directly (already includes slippage)
-            // The quote's minAmount is expectedOut * (1 - slippageTolerance)
-            let minOutForSwap = evmAmountOutMin
-
             // exactInput selector: 0xb858183f
             let selector: [UInt8] = [0xb8, 0x58, 0x18, 0x3f]
 
-            // Encode the tuple
-            let argsBlob = UniswapV3SwapperConnector.encodeExactInputTuple(
+            let argsBlob = UniswapV3SwapperConnectorV3.encodeExactInputTuple(
                 pathBytes: pathBytes,
                 recipient: coa.address(),
                 amountIn: evmAmountIn,
-                amountOutMin: minOutForSwap
+                amountOutMin: evmAmountOutMin
             )
 
-            // Head for single dynamic arg is always 32
-            let head = UniswapV3SwapperConnector.abiWord(UInt256(32))
-
-            // Final calldata = selector || head || tuple
+            let head = UniswapV3SwapperConnectorV3.abiWord(UInt256(32))
             let calldata = selector.concat(head).concat(argsBlob)
 
-            // Execute the swap - try V3 first, fall back to V2 if needed
+            // Execute the swap
             var swapResult = coa.call(
                 to: self.routerAddress,
                 data: calldata,
@@ -382,81 +352,48 @@ access(all) contract UniswapV3SwapperConnector {
             var evmAmountOut: UInt256 = 0
 
             if swapResult.status == EVM.Status.successful {
-                // V3 swap succeeded
                 let decoded = EVM.decodeABI(types: [Type<UInt256>()], data: swapResult.data)
                 evmAmountOut = decoded.length > 0 ? decoded[0] as! UInt256 : UInt256(0)
+                self.lastGasUsed = swapResult.gasUsed
             } else {
-                // V3 failed - try PunchSwap V2 fallback
-                // PunchSwap V2 Router address (hardcoded to avoid adding new field to deployed contract)
-                let punchswapV2Router = EVM.addressFromString("0xf45AFe28fd5519d5f8C1d4787a4D5f724C0eFa4d")
+                panic("V3 swap FAILED. Error: ".concat(swapResult.errorMessage))
+            }
 
-                // First approve V2 router
-                let approveV2Data = EVM.encodeABIWithSignature(
-                    "approve(address,uint256)",
-                    [punchswapV2Router, evmAmountIn]
-                )
-                let approveV2Result = coa.call(
-                    to: inToken,
-                    data: approveV2Data,
-                    gasLimit: 120_000,
-                    value: EVM.Balance(attoflow: 0)
-                )
+            // Query output token decimals
+            let decimalsData = EVM.encodeABIWithSignature("decimals()", [])
+            let decimalsResult = coa.call(
+                to: outToken,
+                data: decimalsData,
+                gasLimit: 50_000,
+                value: EVM.Balance(attoflow: 0)
+            )
 
-                // V2 swap: swapExactTokensForTokens(amountIn, amountOutMin, path[], to, deadline)
-                let deadline = UInt256(UInt64(getCurrentBlock().timestamp) + 300)
-                let v2SwapData = EVM.encodeABIWithSignature(
-                    "swapExactTokensForTokens(uint256,uint256,address[],address,uint256)",
-                    [evmAmountIn, minOutForSwap, [inToken, outToken], coa.address(), deadline]
-                )
-
-                let v2Result = coa.call(
-                    to: punchswapV2Router,
-                    data: v2SwapData,
-                    gasLimit: 500_000,
-                    value: EVM.Balance(attoflow: 0)
-                )
-
-                if v2Result.status != EVM.Status.successful {
-                    panic("Both V3 and V2 swaps failed. V3: ".concat(swapResult.errorMessage).concat(" V2: ").concat(v2Result.errorMessage))
-                }
-
-                // V2 returns amounts array - last element is output amount
-                let v2Decoded = EVM.decodeABI(types: [Type<[UInt256]>()], data: v2Result.data)
-                if v2Decoded.length > 0 {
-                    let amounts = v2Decoded[0] as! [UInt256]
-                    evmAmountOut = amounts[amounts.length - 1]
+            var outDecimals: UInt8 = 18
+            if decimalsResult.status == EVM.Status.successful && decimalsResult.data.length > 0 {
+                let decoded = EVM.decodeABI(types: [Type<UInt8>()], data: decimalsResult.data)
+                if decoded.length > 0 {
+                    outDecimals = decoded[0] as! UInt8
                 }
             }
 
-            // Calculate dynamic precision based on output token decimals
-            // For 18 decimal tokens: precision = 10^10 (gap between 18 and 8 decimals)
-            // For 6 decimal tokens: precision = 1 (6 decimals already fits in 8 decimal precision)
-            // Formula: precision = 10^max(0, tokenDecimals - 8)
-            let outDecimals = FlowEVMBridgeUtils.getTokenDecimals(evmContractAddress: outToken)
-            var outPrecision: UInt256 = 1
+            // Calculate precision for output
+            var outputPrecision: UInt256 = 1
             if outDecimals > 8 {
-                // Calculate 10^(decimals - 8)
+                let exponent = outDecimals - 8
                 var i: UInt8 = 0
-                while i < (outDecimals - 8) {
-                    outPrecision = outPrecision * 10
+                while i < exponent {
+                    outputPrecision = outputPrecision * 10
                     i = i + 1
                 }
             }
-            let cleanAmountOut = (evmAmountOut / outPrecision) * outPrecision
 
-            // Validate that we have a meaningful output amount
-            // If cleanAmountOut is 0, the swap succeeded but returned too little (dust)
+            let cleanAmountOut = (evmAmountOut / outputPrecision) * outputPrecision
+
             if cleanAmountOut == 0 {
-                panic("Swap output amount too small after precision rounding. Raw output: "
-                    .concat(evmAmountOut.toString())
-                    .concat(" wei, token decimals: ")
-                    .concat(outDecimals.toString())
-                    .concat(". Increase your purchase amount or check liquidity."))
+                panic("Swap returned zero output after precision rounding")
             }
 
             // Withdraw output tokens back to Cadence
-            // FlowEVMBridge handles WFLOW→FLOW conversion automatically since WFLOW is
-            // associated with FlowToken.Vault in FlowEVMBridgeConfig
             let outVault <- coa.withdrawTokens(
                 type: self.outVaultType,
                 amount: cleanAmountOut,
@@ -485,7 +422,7 @@ access(all) contract UniswapV3SwapperConnector {
             return <- outVault
         }
 
-        /// Get quote using V3 Quoter via dryCall (view call, no gas spent)
+        /// Get quote using V3 Quoter
         access(all) fun getQuote(
             fromTokenType: Type,
             toTokenType: Type,
@@ -502,16 +439,13 @@ access(all) contract UniswapV3SwapperConnector {
                     erc20Address: inToken
                 )
 
-                // Build path bytes for quote - wrap in EVMBytes for ABI encoding
                 let pathBytes = EVM.EVMBytes(value: self.buildPathBytes(reverse: false))
 
-                // quoteExactInput(bytes path, uint256 amountIn) returns (uint256 amountOut)
                 let quoteData = EVM.encodeABIWithSignature(
                     "quoteExactInput(bytes,uint256)",
                     [pathBytes, evmAmount]
                 )
 
-                // Use dryCall for quotes - it's a view call that doesn't spend gas
                 let quoteResult = coa!.dryCall(
                     to: self.quoterAddress,
                     data: quoteData,
@@ -527,7 +461,7 @@ access(all) contract UniswapV3SwapperConnector {
                             evmAmountOut,
                             erc20Address: outToken
                         )
-                        let minAmount = expectedOut * 0.90  // 10% slippage
+                        let minAmount = expectedOut * 0.90
 
                         emit QuoteFetched(
                             quoterAddress: self.quoterAddress.toString(),
@@ -549,7 +483,7 @@ access(all) contract UniswapV3SwapperConnector {
                 }
             }
 
-            // Fallback estimate (should rarely be used)
+            // Fallback estimate
             return DeFiActions.Quote(
                 expectedAmount: amount * 0.99,
                 minAmount: amount * 0.89,
@@ -569,6 +503,11 @@ access(all) contract UniswapV3SwapperConnector {
                 result.append(token.toString())
             }
             return result
+        }
+
+        /// Get execution effort from last swap
+        access(all) fun getLastExecutionEffort(): UInt64 {
+            return self.lastGasUsed
         }
 
         /// Get swapper info
@@ -641,12 +580,12 @@ access(all) contract UniswapV3SwapperConnector {
     }
 
     init() {
-        self.AdminStoragePath = /storage/UniswapV3SwapperConnectorAdmin
+        self.AdminStoragePath = /storage/UniswapV3SwapperConnectorV3Admin
 
-        // FlowSwap V3 Mainnet addresses (Flow EVM Chain ID: 747)
-        self.defaultRouterAddress = EVM.addressFromString("0xeEDC6Ff75e1b10B903D9013c358e446a73d35341")   // SwapRouter02
-        self.defaultFactoryAddress = EVM.addressFromString("0xca6d7Bb03334bBf135902e1d919a5feccb461632")  // V3 Core Factory
-        self.defaultQuoterAddress = EVM.addressFromString("0x370A8DF17742867a44e56223EC20D82092242C85")   // Quoter
+        // FlowSwap V3 Mainnet addresses
+        self.defaultRouterAddress = EVM.addressFromString("0xeEDC6Ff75e1b10B903D9013c358e446a73d35341")
+        self.defaultFactoryAddress = EVM.addressFromString("0xca6d7Bb03334bBf135902e1d919a5feccb461632")
+        self.defaultQuoterAddress = EVM.addressFromString("0x370A8DF17742867a44e56223EC20D82092242C85")
 
         // WFLOW on Flow EVM Mainnet
         self.wflowAddress = EVM.addressFromString("0xd3bF53DAC106A0290B0483EcBC89d40FcC961f3e")
