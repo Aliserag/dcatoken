@@ -18,9 +18,6 @@ import { ec as EC } from "elliptic";
 
 const curve = new EC("p256");
 
-// Get network from environment (server-side)
-const NETWORK = process.env.NEXT_PUBLIC_FLOW_NETWORK || "mainnet";
-
 // Network-specific contract addresses
 const CONTRACTS_BY_NETWORK = {
   mainnet: {
@@ -43,9 +40,6 @@ const CONTRACTS_BY_NETWORK = {
   },
 };
 
-// Get contracts for current network
-const CONTRACTS = CONTRACTS_BY_NETWORK[NETWORK as keyof typeof CONTRACTS_BY_NETWORK] || CONTRACTS_BY_NETWORK.mainnet;
-
 // Network-specific service account configuration
 const SERVICE_CONFIG = {
   mainnet: {
@@ -55,16 +49,37 @@ const SERVICE_CONFIG = {
   },
   testnet: {
     address: "0x4a22e2fce83584aa",
-    keyId: 1,  // Key index 1 (key 0 was revoked)
+    keyId: 1, // Key index 1 (key 0 was revoked)
     privateKeyEnv: "PRIVATE_KEY_TESTNET",
   },
 };
 
-// Get service account config for current network
-const serviceConfig = SERVICE_CONFIG[NETWORK as keyof typeof SERVICE_CONFIG] || SERVICE_CONFIG.mainnet;
-const SERVICE_ADDRESS = process.env.SERVICE_ACCOUNT_ADDRESS || serviceConfig.address;
-const SERVICE_PRIVATE_KEY = process.env.SERVICE_PRIVATE_KEY || process.env[serviceConfig.privateKeyEnv];
-const SERVICE_KEY_ID = parseInt(process.env.SERVICE_KEY_ID || serviceConfig.keyId.toString());
+type NetworkType = "mainnet" | "testnet";
+
+interface NetworkConfig {
+  network: NetworkType;
+  contracts: typeof CONTRACTS_BY_NETWORK.mainnet;
+  serviceAddress: string;
+  serviceKeyId: number;
+  privateKey: string | undefined;
+}
+
+// Get network configuration from request
+const getNetworkConfig = (network: string): NetworkConfig => {
+  const validNetwork: NetworkType =
+    network === "mainnet" || network === "testnet" ? network : "mainnet";
+  const contracts = CONTRACTS_BY_NETWORK[validNetwork];
+  const serviceConfig = SERVICE_CONFIG[validNetwork];
+  const privateKey = process.env[serviceConfig.privateKeyEnv];
+
+  return {
+    network: validNetwork,
+    contracts,
+    serviceAddress: serviceConfig.address,
+    serviceKeyId: serviceConfig.keyId,
+    privateKey,
+  };
+};
 
 // Hash message for signing (SHA3-256)
 const hashMessageHex = (msgHex: string): Buffer => {
@@ -83,26 +98,27 @@ const signWithKey = (privateKey: string, msgHex: string): string => {
   return Buffer.concat([r, s]).toString("hex");
 };
 
-// Service account authorization function
-// Returns an authorization object that FCL uses to sign transactions
-const serviceSigner = async (account: any): Promise<any> => {
-  return {
-    ...account,
-    tempId: `${SERVICE_ADDRESS}-${SERVICE_KEY_ID}`,
-    addr: fcl.sansPrefix(SERVICE_ADDRESS),
-    keyId: SERVICE_KEY_ID,
-    signingFunction: async (signable: any) => ({
-      addr: fcl.withPrefix(SERVICE_ADDRESS),
-      keyId: SERVICE_KEY_ID,
-      signature: signWithKey(SERVICE_PRIVATE_KEY!, signable.message),
-    }),
+// Create service account signer with network-specific config
+const createServiceSigner = (config: NetworkConfig) => {
+  return async (account: any): Promise<any> => {
+    return {
+      ...account,
+      tempId: `${config.serviceAddress}-${config.serviceKeyId}`,
+      addr: fcl.sansPrefix(config.serviceAddress),
+      keyId: config.serviceKeyId,
+      signingFunction: async (signable: any) => ({
+        addr: fcl.withPrefix(config.serviceAddress),
+        keyId: config.serviceKeyId,
+        signature: signWithKey(config.privateKey!, signable.message),
+      }),
+    };
   };
 };
 
-// Cadence transaction to create a DCA plan
-const CREATE_PLAN_TX = `
-import EVM from ${CONTRACTS.EVM}
-import DCAServiceEVM from ${CONTRACTS.DCAServiceEVM}
+// Generate Cadence transaction to create a DCA plan
+const getCreatePlanTx = (contracts: NetworkConfig["contracts"]) => `
+import EVM from ${contracts.EVM}
+import DCAServiceEVM from ${contracts.DCAServiceEVM}
 
 transaction(
     userEVMAddressHex: String,
@@ -142,15 +158,14 @@ transaction(
 }
 `;
 
-// Cadence transaction to schedule a DCA plan
-// This version creates/uses a dedicated fee vault for scheduler fees
-const SCHEDULE_PLAN_TX = `
-import FlowTransactionScheduler from ${CONTRACTS.FlowTransactionScheduler}
-import FlowTransactionSchedulerUtils from ${CONTRACTS.FlowTransactionSchedulerUtils}
-import FlowToken from ${CONTRACTS.FlowToken}
-import FungibleToken from ${CONTRACTS.FungibleToken}
-import DCAHandlerEVMV4 from ${CONTRACTS.DCAHandlerEVMV4}
-import DCAServiceEVM from ${CONTRACTS.DCAServiceEVM}
+// Generate Cadence transaction to schedule a DCA plan
+const getSchedulePlanTx = (contracts: NetworkConfig["contracts"]) => `
+import FlowTransactionScheduler from ${contracts.FlowTransactionScheduler}
+import FlowTransactionSchedulerUtils from ${contracts.FlowTransactionSchedulerUtils}
+import FlowToken from ${contracts.FlowToken}
+import FungibleToken from ${contracts.FungibleToken}
+import DCAHandlerEVMV4 from ${contracts.DCAHandlerEVMV4}
+import DCAServiceEVM from ${contracts.DCAServiceEVM}
 
 transaction(planId: UInt64, totalFeeAmount: UFix64) {
 
@@ -243,9 +258,9 @@ transaction(planId: UInt64, totalFeeAmount: UFix64) {
     execute {
         // executionEffort based on swap type:
         // - Cadence-only swaps (IncrementFi): 400
-        // - EVM swaps (UniswapV3): 3500 (includes bridging overhead)
+        // - EVM swaps (UniswapV3): 5000 (includes bridging + UniswapV3 overhead)
         // DCAServiceEVM always uses EVM swaps
-        let executionEffort: UInt64 = 3500
+        let executionEffort: UInt64 = 5000
         let priority = FlowTransactionScheduler.Priority.Medium
 
         let loopConfig = DCAHandlerEVMV4.createLoopConfig(
@@ -296,8 +311,8 @@ transaction(planId: UInt64, totalFeeAmount: UFix64) {
 `;
 
 // Configure FCL based on network
-const configureFCL = () => {
-  if (NETWORK === "testnet") {
+const configureFCL = (network: NetworkType) => {
+  if (network === "testnet") {
     fcl.config({
       "flow.network": "testnet",
       "accessNode.api": "https://rest-testnet.onflow.org",
@@ -308,7 +323,7 @@ const configureFCL = () => {
       "accessNode.api": "https://rest-mainnet.onflow.org",
     });
   }
-  console.log(`Relay API configured for ${NETWORK}`);
+  console.log(`Relay API configured for ${network}`);
 };
 
 // Extract plan ID from transaction events
@@ -322,25 +337,36 @@ const extractPlanId = (events: any[]): number | null => {
 };
 
 export async function POST(request: NextRequest) {
+  const { action, params, network: requestNetwork } = await request.json();
+
+  // Get network-specific configuration
+  const config = getNetworkConfig(requestNetwork || "mainnet");
+
+  console.log("Relay API called:", { action, params, network: config.network });
+
   // Validate service account configuration
-  if (!SERVICE_PRIVATE_KEY) {
-    console.error("SERVICE_PRIVATE_KEY not configured");
+  if (!config.privateKey) {
+    console.error(`Private key not configured for ${config.network}`);
     return NextResponse.json(
-      { success: false, error: "Service account not configured" },
+      { success: false, error: `Service account not configured for ${config.network}` },
       { status: 500 }
     );
   }
 
-  const { action, params } = await request.json();
-  console.log("Relay API called:", { action, params });
+  // Configure FCL for the requested network
+  configureFCL(config.network);
 
-  // Configure FCL
-  configureFCL();
+  // Create signer with network-specific config
+  const serviceSigner = createServiceSigner(config);
 
   try {
     if (action === "createPlan") {
       // Validate required params
-      if (!params.userEVMAddress || !params.sourceToken || !params.targetToken) {
+      if (
+        !params.userEVMAddress ||
+        !params.sourceToken ||
+        !params.targetToken
+      ) {
         return NextResponse.json(
           { success: false, error: "Missing required parameters" },
           { status: 400 }
@@ -348,7 +374,7 @@ export async function POST(request: NextRequest) {
       }
 
       const txId = await fcl.mutate({
-        cadence: CREATE_PLAN_TX,
+        cadence: getCreatePlanTx(config.contracts),
         args: (arg: any, t: any) => [
           arg(params.userEVMAddress, t.String),
           arg(params.sourceToken, t.String),
@@ -379,7 +405,7 @@ export async function POST(request: NextRequest) {
 
       // Extract planId from events
       const planId = extractPlanId(result.events);
-      console.log("Plan created:", { txId, planId, events: result.events });
+      console.log("Plan created:", { txId, planId, network: config.network, events: result.events });
 
       return NextResponse.json({ success: true, txId, planId });
     }
@@ -393,17 +419,23 @@ export async function POST(request: NextRequest) {
       }
 
       // Calculate total fee needed for all executions
-      // FlowTransactionScheduler.estimate() with executionEffort: 3500 returns ~0.7 FLOW per execution
-      // We add 20% buffer to ensure sufficient funds even with fee fluctuations
-      // maxExecutions from params, default to 10 if not provided
+      // Based on testnet analysis with executionEffort: 5000
+      // - Observed per-execution cost: 0.735 - 0.77 FLOW
+      // - Average per-execution: ~0.755 FLOW
+      // Using 0.78 FLOW provides ~3% safety buffer over max observed
       const maxExecutions = params.maxExecutions || 10;
-      const feePerExecution = 0.85; // ~0.7 FLOW estimate + 20% buffer for executionEffort: 3500
+      const feePerExecution = 0.78; // ~0.755 FLOW observed avg + 3% buffer
       const totalFeeAmount = (feePerExecution * maxExecutions).toFixed(8);
 
-      console.log("Scheduling plan with fees:", { planId: params.planId, maxExecutions, totalFeeAmount });
+      console.log("Scheduling plan with fees:", {
+        planId: params.planId,
+        maxExecutions,
+        totalFeeAmount,
+        network: config.network,
+      });
 
       const txId = await fcl.mutate({
-        cadence: SCHEDULE_PLAN_TX,
+        cadence: getSchedulePlanTx(config.contracts),
         args: (arg: any, t: any) => [
           arg(params.planId.toString(), t.UInt64),
           arg(totalFeeAmount, t.UFix64),
@@ -423,7 +455,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      console.log("Plan scheduled:", { txId, planId: params.planId });
+      console.log("Plan scheduled:", { txId, planId: params.planId, network: config.network });
       return NextResponse.json({ success: true, txId });
     }
 

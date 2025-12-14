@@ -8,7 +8,7 @@ import { useTransaction } from "@/hooks/use-transaction";
 import { useWalletType } from "@/components/wallet-selector";
 import {
   SETUP_COA_TX,
-  WRAP_FLOW_TX,
+  WRAP_AND_APPROVE_TX,
   APPROVE_DCA_TX,
   GET_USER_COA_SCRIPT,
   GET_TOKEN_BALANCE_SCRIPT,
@@ -56,8 +56,8 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
 
   // Token selection - use appropriate list based on wallet type
   const tokenList = isFlow ? CADENCE_TOKEN_LIST : EVM_TOKEN_LIST;
-  const [sourceToken, setSourceToken] = useState(tokenList[0]); // FLOW or WFLOW
-  const [targetToken, setTargetToken] = useState(tokenList[1]); // USDF
+  const [sourceTokenState, setSourceToken] = useState(tokenList[0]);
+  const [targetTokenState, setTargetToken] = useState(tokenList[1]);
 
   // Update tokens when wallet type changes
   useEffect(() => {
@@ -66,16 +66,19 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
     setTargetToken(newList[1]);
   }, [isFlow]);
 
+  // Ensure tokens are always valid for current wallet type (handles race conditions)
+  const sourceToken = tokenList.find(t => t.address === sourceTokenState.address) || tokenList[0];
+  const targetToken = tokenList.find(t => t.address === targetTokenState.address) || tokenList[1];
+
   // Setup state (Flow wallet)
   const [hasCOA, setHasCOA] = useState(false);
   const [checkingCOA, setCheckingCOA] = useState(false);
   const [hasApproval, setHasApproval] = useState(false);
   const [checkingApproval, setCheckingApproval] = useState(false);
-  const [hasFundedCOA, setHasFundedCOA] = useState(false); // Track if user has deposited WFLOW
 
   // Balance state
   const [flowBalance, setFlowBalance] = useState("0.00");
-  const [wflowBalance, setWflowBalance] = useState("0.00"); // WFLOW in user's COA
+  const [coaTokenBalance, setCoaTokenBalance] = useState("0.00"); // EVM token balance in user's COA
   const [loadingBalance, setLoadingBalance] = useState(false);
 
   // Price state
@@ -127,7 +130,25 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
     }
   }, [isApproveSuccess, refetchAllowance]);
 
-  const hasMetamaskApproval = metamaskAllowance ? BigInt(metamaskAllowance) > BigInt(0) : false;
+  // Calculate required approval amount for current plan
+  const getRequiredApprovalAmount = (): bigint => {
+    if (!amountPerInterval || !maxExecutions) return BigInt(0);
+    const executions = parseInt(maxExecutions) || 1;
+    const amountPerExec = parseFloat(amountPerInterval) || 0;
+    const totalNeeded = amountPerExec * executions * 1.05; // 5% buffer
+    try {
+      return parseUnits(totalNeeded.toFixed(sourceToken.decimals), sourceToken.decimals);
+    } catch {
+      return BigInt(0);
+    }
+  };
+
+  const requiredApprovalAmount = getRequiredApprovalAmount();
+
+  // Check if current allowance is sufficient for the NEW plan amount
+  const hasMetamaskApproval = metamaskAllowance
+    ? BigInt(metamaskAllowance) >= requiredApprovalAmount && requiredApprovalAmount > BigInt(0)
+    : false;
 
   const {
     status: txStatus,
@@ -193,13 +214,10 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
         setUserCOAAddress(coaAddress);
         setHasCOA(true);
         checkApproval(coaAddress, sourceToken.address);
-        // Check if user already has WFLOW in their COA
-        checkWFLOWBalance(coaAddress);
       } else {
         setUserCOAAddress(null);
         setHasCOA(false);
         setHasApproval(false);
-        setHasFundedCOA(false);
       }
     } catch (error) {
       console.error("Error checking COA:", error);
@@ -207,17 +225,6 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
     } finally {
       setCheckingCOA(false);
     }
-  };
-
-  // Check WFLOW balance in user's COA using the allowance as a proxy
-  // If user has approved the DCA service, they likely have funds
-  // This avoids the EVM.call() issue in scripts
-  const checkWFLOWBalance = async (coaAddress: string) => {
-    // For now, we'll rely on the approval check and session state
-    // The user will deposit funds as part of the flow
-    // TODO: Add proper balance check when EVM script support improves
-    console.log("COA address:", coaAddress);
-    // Don't set hasFundedCOA here - let the deposit action set it
   };
 
   const checkApproval = async (coaAddress: string, tokenAddress: string) => {
@@ -273,36 +280,57 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
     }
   };
 
-  const handleWrapFlow = async () => {
-    if (!amountPerInterval) return;
+  // Combined: Deposit FLOW + Wrap to WFLOW + Approve DCA service in ONE transaction
+  const handleFundAndApprove = async () => {
+    if (!amountPerInterval || !maxExecutions) return;
+
     // Calculate total deposit: amountPerInterval × maxExecutions
-    const executions = maxExecutions ? parseInt(maxExecutions) : 1;
+    const executions = parseInt(maxExecutions);
     const totalDeposit = (parseFloat(amountPerInterval) * executions).toString();
-    // UFix64 requires decimal point - ensure format like "1.0" not "1"
-    const formattedAmount = totalDeposit.includes('.')
-      ? totalDeposit
-      : `${totalDeposit}.0`;
+    // UFix64 requires decimal point
+    const formattedAmount = totalDeposit.includes('.') ? totalDeposit : `${totalDeposit}.0`;
+
+    // DCA COA address (spender) - network-aware from config
+    const spenderAddressClean = DCA_COA_ADDRESS.replace("0x", "");
+
+    // Approve max uint256 for unlimited future approvals
+    const maxUint256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+
     const result = await executeTransaction(
-      WRAP_FLOW_TX,
-      (arg, t) => [arg(formattedAmount, t.UFix64)],
+      WRAP_AND_APPROVE_TX,
+      (arg, t) => [
+        arg(formattedAmount, t.UFix64),
+        arg(spenderAddressClean, t.String),
+        arg(maxUint256, t.UInt256),
+      ],
       500
     );
-    if (result.success && userAddress) {
-      setHasFundedCOA(true); // Mark that user has deposited funds
-      setTimeout(() => fetchBalance(userAddress), 2000);
+
+    if (result.success) {
+      // Refresh approval status and balance
+      if (userCOAAddress) {
+        setTimeout(() => checkApproval(userCOAAddress, sourceToken.address), 2000);
+      }
+      if (userAddress) {
+        setTimeout(() => fetchBalance(userAddress), 2000);
+      }
     }
   };
 
+  // Approve DCA service for non-FLOW tokens (e.g., USDF already in COA)
   const handleApprove = async () => {
     // Approve max uint256 for convenience
     const maxUint256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
     // Remove 0x prefix for Cadence
     const tokenAddressClean = sourceToken.address.replace("0x", "");
+    // DCA COA address (spender) - network-aware from config
+    const spenderAddressClean = DCA_COA_ADDRESS.replace("0x", "");
 
     const result = await executeTransaction(
       APPROVE_DCA_TX,
       (arg, t) => [
         arg(tokenAddressClean, t.String),
+        arg(spenderAddressClean, t.String),
         arg(maxUint256, t.UInt256),
       ],
       500
@@ -460,7 +488,11 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
               <span className="text-gray-600 dark:text-gray-400">You invest</span>
               <span className="text-xs text-gray-500">
                 {isFlow ? (
-                  <>FLOW Balance: {loadingBalance ? "..." : flowBalance}</>
+                  sourceToken.symbol === "FLOW" ? (
+                    <>FLOW Balance: {loadingBalance ? "..." : flowBalance}</>
+                  ) : (
+                    <>COA: {userCOAAddress ? `${userCOAAddress.slice(0, 8)}...` : "Not set up"}</>
+                  )
                 ) : isEvmConnected ? (
                   <>{sourceToken.symbol} Balance: {isLoadingMetamaskBalance ? "..." : formattedMetamaskBalance}</>
                 ) : null}
@@ -631,6 +663,11 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
                 <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
                   Approve <span className="font-semibold">{(totalInvestment * 1.05).toFixed(2)} {sourceToken.symbol}</span> for this DCA plan
                 </p>
+                {metamaskAllowance && BigInt(metamaskAllowance) > BigInt(0) && (
+                  <p className="text-xs text-orange-500 dark:text-orange-500 mt-2">
+                    Current allowance: {(Number(metamaskAllowance) / 10 ** sourceToken.decimals).toFixed(4)} {sourceToken.symbol} (insufficient for this plan)
+                  </p>
+                )}
               </div>
 
               <button
@@ -744,64 +781,70 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
                 ) : "Setup COA"}
               </button>
             </div>
-          ) : !hasFundedCOA ? (
-            // Step 2a: Deposit FLOW into COA
-            <div className="space-y-3">
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                  Fund Your DCA Strategy
-                </p>
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                  Deposit <span className="font-semibold">{totalInvestment.toFixed(2)} FLOW</span> ({amountPerInterval || "0"} × {maxExecutions || "1"} investments)
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleWrapFlow}
-                disabled={txLoading || !amountPerInterval || !maxExecutions}
-                className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer"
-              >
-                {txLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Depositing...
-                  </span>
-                ) : `Deposit ${totalInvestment.toFixed(2)} FLOW`}
-              </button>
-            </div>
           ) : !hasApproval ? (
-            // Step 2b: Approve DCA Service (only if not already approved)
-            <div className="space-y-3">
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
-                <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                  Approve DCA Service
-                </p>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                  Allow automated {sourceToken.symbol} swaps on your behalf
-                </p>
-              </div>
+            // Step 2: Fund & Approve (combined for FLOW) or just Approve (for USDF)
+            sourceToken.symbol === "FLOW" ? (
+              // FLOW: Combined deposit + wrap + approve in one transaction
+              <div className="space-y-3">
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Fund & Approve DCA Strategy
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    Deposit <span className="font-semibold">{totalInvestment.toFixed(2)} FLOW</span> and approve DCA service in one step
+                  </p>
+                </div>
 
-              <button
-                type="button"
-                onClick={handleApprove}
-                disabled={txLoading || checkingApproval}
-                className="w-full py-4 bg-gradient-to-r from-[#00EF8B] to-[#00D9FF] text-black font-bold rounded-xl disabled:opacity-50 cursor-pointer"
-              >
-                {(checkingApproval || txLoading) ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    {checkingApproval ? "Checking..." : "Approving..."}
-                  </span>
-                ) : `Approve ${sourceToken.symbol}`}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={handleFundAndApprove}
+                  disabled={txLoading || !amountPerInterval || !maxExecutions}
+                  className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer"
+                >
+                  {txLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Processing...
+                    </span>
+                  ) : `Fund & Approve ${totalInvestment.toFixed(2)} FLOW`}
+                </button>
+              </div>
+            ) : (
+              // USDF: Just approve (user must have USDF in their COA already)
+              <div className="space-y-3">
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+                  <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    Approve DCA Service
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    Allow automated {sourceToken.symbol} swaps from your COA
+                  </p>
+                  <p className="text-xs text-blue-500 dark:text-blue-500 mt-2">
+                    Note: Ensure you have {sourceToken.symbol} in your COA ({userCOAAddress?.slice(0, 10)}...)
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  disabled={txLoading || checkingApproval}
+                  className="w-full py-4 bg-gradient-to-r from-[#00EF8B] to-[#00D9FF] text-black font-bold rounded-xl disabled:opacity-50 cursor-pointer"
+                >
+                  {(checkingApproval || txLoading) ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      {checkingApproval ? "Checking..." : "Approving..."}
+                    </span>
+                  ) : `Approve ${sourceToken.symbol}`}
+                </button>
+              </div>
+            )
           ) : (
             <div className="space-y-3">
               <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">

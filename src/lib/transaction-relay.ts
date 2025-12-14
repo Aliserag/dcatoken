@@ -9,6 +9,8 @@
  * Security comes from allowance checks, not from who submits.
  */
 
+import { NETWORK } from "@/config/fcl-config";
+
 export interface CreatePlanParams {
   userEVMAddress: string;
   sourceToken: string;
@@ -35,7 +37,7 @@ export async function createDCAPlanSponsored(
     const response = await fetch("/api/relay", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "createPlan", params }),
+      body: JSON.stringify({ action: "createPlan", params, network: NETWORK }),
     });
 
     const result = await response.json();
@@ -73,7 +75,7 @@ export async function scheduleDCAPlan(
     const response = await fetch("/api/relay", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "schedulePlan", params: { planId, maxExecutions } }),
+      body: JSON.stringify({ action: "schedulePlan", params: { planId, maxExecutions }, network: NETWORK }),
     });
 
     const result = await response.json();

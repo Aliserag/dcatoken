@@ -113,7 +113,7 @@ export default function Home() {
                 Documentation
               </a>
               <a
-                href="https://github.com/onflow"
+                href="https://github.com/Aliserag/dcatoken"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-gray-600 dark:text-gray-400 hover:text-[#00EF8B] transition-colors"

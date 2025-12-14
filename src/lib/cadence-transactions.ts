@@ -138,7 +138,7 @@ transaction(initialFunding: UFix64?) {
 `;
 
 /**
- * Wrap FLOW to WFLOW for Cadence users
+ * Wrap FLOW to WFLOW for Cadence users (standalone - kept for backwards compatibility)
  */
 export const WRAP_FLOW_TX = `
 import EVM from 0xEVM
@@ -160,7 +160,7 @@ transaction(amount: UFix64) {
     }
 
     execute {
-        // WFLOW contract address on Flow mainnet
+        // WFLOW contract address (same on mainnet and testnet)
         let wflowAddress = EVM.EVMAddress(
             bytes: [0xd3, 0xbF, 0x53, 0xDA, 0xC1, 0x06, 0xA0, 0x29, 0x0B, 0x04,
                     0x83, 0xEc, 0xBC, 0x89, 0xd4, 0x0F, 0xCC, 0x96, 0x1f, 0x3e]
@@ -193,13 +193,114 @@ transaction(amount: UFix64) {
 `;
 
 /**
+ * Combined: Wrap FLOW to WFLOW AND Approve DCA service in one transaction
+ * This simplifies the UX by reducing two transactions to one
+ */
+export const WRAP_AND_APPROVE_TX = `
+import EVM from 0xEVM
+import FungibleToken from 0xFungibleToken
+import FlowToken from 0xFlowToken
+
+transaction(amount: UFix64, spenderAddress: String, approvalAmount: UInt256) {
+    let coa: auth(EVM.Call) &EVM.CadenceOwnedAccount
+    let flowVault: auth(FungibleToken.Withdraw) &FlowToken.Vault
+
+    prepare(signer: auth(Storage, BorrowValue) &Account) {
+        self.coa = signer.storage.borrow<auth(EVM.Call) &EVM.CadenceOwnedAccount>(
+            from: /storage/evm
+        ) ?? panic("COA not found. Run setup_coa first.")
+
+        self.flowVault = signer.storage.borrow<auth(FungibleToken.Withdraw) &FlowToken.Vault>(
+            from: /storage/flowTokenVault
+        ) ?? panic("FlowToken vault not found")
+    }
+
+    execute {
+        // WFLOW contract address (same on mainnet and testnet)
+        let wflowAddress = EVM.EVMAddress(
+            bytes: [0xd3, 0xbF, 0x53, 0xDA, 0xC1, 0x06, 0xA0, 0x29, 0x0B, 0x04,
+                    0x83, 0xEc, 0xBC, 0x89, 0xd4, 0x0F, 0xCC, 0x96, 0x1f, 0x3e]
+        )
+
+        // === Step 1: Deposit FLOW into COA and wrap to WFLOW ===
+        let funding <- self.flowVault.withdraw(amount: amount) as! @FlowToken.Vault
+        self.coa.deposit(from: <-funding)
+
+        let depositCalldata: [UInt8] = [0xd0, 0xe3, 0x0d, 0xb0]
+        let amountInWei = EVM.Balance(attoflow: 0)
+        amountInWei.setFLOW(flow: amount)
+
+        let wrapResult = self.coa.call(
+            to: wflowAddress,
+            data: depositCalldata,
+            gasLimit: 100000,
+            value: amountInWei
+        )
+
+        if wrapResult.status != EVM.Status.successful {
+            panic("WFLOW wrap failed with error code: ".concat(wrapResult.errorCode.toString()))
+        }
+        log("Wrapped ".concat(amount.toString()).concat(" FLOW to WFLOW"))
+
+        // === Step 2: Approve DCA service to spend WFLOW ===
+        // Parse spender address
+        let spenderBytes = spenderAddress.decodeHex()
+        var spenderAddressBytes: [UInt8; 20] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        var s = 0
+        while s < 20 && s < spenderBytes.length {
+            spenderAddressBytes[s] = spenderBytes[s]
+            s = s + 1
+        }
+
+        // Build approve(address spender, uint256 amount) calldata
+        var calldata: [UInt8] = [0x09, 0x5e, 0xa7, 0xb3]
+
+        // Pad spender address to 32 bytes
+        var j = 0
+        while j < 12 {
+            calldata.append(0x00)
+            j = j + 1
+        }
+        for byte in spenderAddressBytes {
+            calldata.append(byte)
+        }
+
+        // Encode approval amount as 32 bytes
+        let amountBytes = approvalAmount.toBigEndianBytes()
+        var k = 0
+        while k < (32 - amountBytes.length) {
+            calldata.append(0x00)
+            k = k + 1
+        }
+        for byte in amountBytes {
+            calldata.append(byte)
+        }
+
+        // Call approve on WFLOW contract
+        let approveResult = self.coa.call(
+            to: wflowAddress,
+            data: calldata,
+            gasLimit: 100000,
+            value: EVM.Balance(attoflow: 0)
+        )
+
+        if approveResult.status != EVM.Status.successful {
+            panic("Approve failed with error code: ".concat(approveResult.errorCode.toString()))
+        }
+
+        log("Approved DCA service to spend WFLOW")
+    }
+}
+`;
+
+/**
  * Approve DCA service to spend tokens from user's COA
- * Shared COA Address: 0x000000000000000000000002623833e1789dbd4a
+ * Spender address is passed as parameter for network compatibility
  */
 export const APPROVE_DCA_TX = `
 import EVM from 0xEVM
 
-transaction(tokenAddress: String, amount: UInt256) {
+transaction(tokenAddress: String, spenderAddress: String, amount: UInt256) {
     let coa: auth(EVM.Call) &EVM.CadenceOwnedAccount
 
     prepare(signer: auth(Storage, BorrowValue) &Account) {
@@ -209,11 +310,14 @@ transaction(tokenAddress: String, amount: UInt256) {
     }
 
     execute {
-        // DCAServiceEVM's shared COA address (the spender)
-        let dcaCoaAddress = EVM.EVMAddress(
-            bytes: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x02, 0x62, 0x38, 0x33, 0xe1, 0x78, 0x9d, 0xbd, 0x4a]
-        )
+        // Parse DCA COA spender address from hex string
+        let spenderBytes = spenderAddress.decodeHex()
+        var spenderAddressBytes: [UInt8; 20] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        var s = 0
+        while s < 20 && s < spenderBytes.length {
+            spenderAddressBytes[s] = spenderBytes[s]
+            s = s + 1
+        }
 
         // Parse token address from hex string
         let tokenBytes = tokenAddress.decodeHex()
@@ -228,33 +332,16 @@ transaction(tokenAddress: String, amount: UInt256) {
         // Build approve(address spender, uint256 amount) calldata
         var calldata: [UInt8] = [0x09, 0x5e, 0xa7, 0xb3]
 
-        // Pad spender address to 32 bytes
+        // Pad spender address to 32 bytes (12 zero bytes + 20 address bytes)
         var j = 0
         while j < 12 {
             calldata.append(0x00)
             j = j + 1
         }
         // Append spender address bytes
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x00)
-        calldata.append(0x02)
-        calldata.append(0x62)
-        calldata.append(0x38)
-        calldata.append(0x33)
-        calldata.append(0xe1)
-        calldata.append(0x78)
-        calldata.append(0x9d)
-        calldata.append(0xbd)
-        calldata.append(0x4a)
+        for byte in spenderAddressBytes {
+            calldata.append(byte)
+        }
 
         // Encode amount as 32 bytes (big-endian)
         let amountBytes = amount.toBigEndianBytes()
@@ -281,6 +368,7 @@ transaction(tokenAddress: String, amount: UInt256) {
 
         log("Approved DCA service to spend tokens")
         log("Token: ".concat(tokenAddress))
+        log("Spender: ".concat(spenderAddress))
         log("Amount: ".concat(amount.toString()))
     }
 }

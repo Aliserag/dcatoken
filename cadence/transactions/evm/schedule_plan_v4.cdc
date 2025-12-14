@@ -94,7 +94,7 @@ transaction(planId: UInt64) {
     }
 
     execute {
-        // Higher execution effort for EVM transactions
+        // Execution effort for EVM transactions (UniswapV3 swaps need ~500k gas)
         let executionEffort: UInt64 = 5000
         let priority = FlowTransactionScheduler.Priority.Medium
 
