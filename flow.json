@@ -1,7 +1,7 @@
 {
 	"contracts": {
-		"DCAServiceEVM": "cadence/contracts/DCAServiceEVM.cdc",
-		"DCAHandlerEVMV4": "cadence/contracts/DCAHandlerEVMV4.cdc"
+		"DCAHandlerEVMV4": "cadence/contracts/DCAHandlerEVMV4.cdc",
+		"DCAServiceEVM": "cadence/contracts/DCAServiceEVMTestnet.cdc"
 	},
 	"dependencies": {
 		"Burner": {
@@ -15,7 +15,7 @@
 		},
 		"EVM": {
 			"source": "mainnet://e467b9dd11fa00df.EVM",
-			"hash": "evm-hash-placeholder",
+			"hash": "2a4782c7459dc5b72c034f67c8dd1beac6bb9b29104772a3e6eb6850718bb3b4",
 			"aliases": {
 				"emulator": "f8d6e0586b0a20c7",
 				"mainnet": "e467b9dd11fa00df",
@@ -60,7 +60,7 @@
 		},
 		"FlowTransactionSchedulerUtils": {
 			"source": "testnet://8c5303eaa26202d6.FlowTransactionSchedulerUtils",
-			"hash": "b5d6f06dd43e4cee907e08a5bc46df0bb9c2338d806d9d253789aee4c4ac01ad",
+			"hash": "429ed886472cd65def9e5ab1dd20079b0dcfb23095d18d54077767ac3316a8ce",
 			"aliases": {
 				"emulator": "f8d6e0586b0a20c7",
 				"mainnet": "e467b9dd11fa00df",
@@ -103,9 +103,23 @@
 				"testnet": "631e88ae7f1d7c20"
 			}
 		},
+		"StableSwapFactory": {
+			"source": "mainnet://b063c16cac85dbd1.StableSwapFactory",
+			"hash": "a63b57a5cc91085016abc34c1b49622b385a8f976ac2ba0e646f7a3f780d344e",
+			"aliases": {
+				"mainnet": "b063c16cac85dbd1"
+			}
+		},
 		"SwapConfig": {
 			"source": "mainnet://b78ef7afa52ff906.SwapConfig",
 			"hash": "111f3caa0ab506bed100225a1481f77687f6ac8493d97e49f149fa26a174ef99",
+			"aliases": {
+				"mainnet": "b78ef7afa52ff906"
+			}
+		},
+		"SwapError": {
+			"source": "mainnet://b78ef7afa52ff906.SwapError",
+			"hash": "7d13a652a1308af387513e35c08b4f9a7389a927bddf08431687a846e4c67f21",
 			"aliases": {
 				"mainnet": "b78ef7afa52ff906"
 			}
@@ -153,15 +167,29 @@
 			"key": {
 				"type": "hex",
 				"index": 1,
+				"privateKey": "${PRIVATE_KEY_MAINNET}"
+			}
+		},
+		"testnet-deployer": {
+			"address": "4a22e2fce83584aa",
+			"key": {
+				"type": "hex",
+				"index": 0,
 				"signatureAlgorithm": "ECDSA_P256",
 				"hashAlgorithm": "SHA3_256",
-				"privateKey": "${PRIVATE_KEY_MAINNET}"
+				"privateKey": "${PRIVATE_KEY_TESTNET}"
 			}
 		}
 	},
 	"deployments": {
 		"mainnet": {
 			"mainnet-deployer": [
+				"DCAServiceEVM",
+				"DCAHandlerEVMV4"
+			]
+		},
+		"testnet": {
+			"testnet-deployer": [
 				"DCAServiceEVM",
 				"DCAHandlerEVMV4"
 			]

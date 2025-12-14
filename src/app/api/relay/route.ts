@@ -18,21 +18,53 @@ import { ec as EC } from "elliptic";
 
 const curve = new EC("p256");
 
-// Service account configuration (from env - server-side only)
-const SERVICE_ADDRESS = process.env.SERVICE_ACCOUNT_ADDRESS || "0xca7ee55e4fc3251a";
-const SERVICE_PRIVATE_KEY = process.env.SERVICE_PRIVATE_KEY || process.env.PRIVATE_KEY_MAINNET;
-const SERVICE_KEY_ID = parseInt(process.env.SERVICE_KEY_ID || "1");
+// Get network from environment (server-side)
+const NETWORK = process.env.NEXT_PUBLIC_FLOW_NETWORK || "mainnet";
 
-// Contract addresses for mainnet
-const CONTRACTS = {
-  DCAServiceEVM: "0xca7ee55e4fc3251a",
-  DCAHandlerEVMV4: "0xca7ee55e4fc3251a",
-  FlowToken: "0x1654653399040a61",
-  FungibleToken: "0xf233dcee88fe0abe",
-  FlowTransactionScheduler: "0xe467b9dd11fa00df",
-  FlowTransactionSchedulerUtils: "0xe467b9dd11fa00df",
-  EVM: "0xe467b9dd11fa00df",
+// Network-specific contract addresses
+const CONTRACTS_BY_NETWORK = {
+  mainnet: {
+    DCAServiceEVM: "0xca7ee55e4fc3251a",
+    DCAHandlerEVMV4: "0xca7ee55e4fc3251a",
+    FlowToken: "0x1654653399040a61",
+    FungibleToken: "0xf233dcee88fe0abe",
+    FlowTransactionScheduler: "0xe467b9dd11fa00df",
+    FlowTransactionSchedulerUtils: "0xe467b9dd11fa00df",
+    EVM: "0xe467b9dd11fa00df",
+  },
+  testnet: {
+    DCAServiceEVM: "0x4a22e2fce83584aa",
+    DCAHandlerEVMV4: "0x4a22e2fce83584aa",
+    FlowToken: "0x7e60df042a9c0868",
+    FungibleToken: "0x9a0766d93b6608b7",
+    FlowTransactionScheduler: "0x8c5303eaa26202d6",
+    FlowTransactionSchedulerUtils: "0x8c5303eaa26202d6",
+    EVM: "0x8c5303eaa26202d6",
+  },
 };
+
+// Get contracts for current network
+const CONTRACTS = CONTRACTS_BY_NETWORK[NETWORK as keyof typeof CONTRACTS_BY_NETWORK] || CONTRACTS_BY_NETWORK.mainnet;
+
+// Network-specific service account configuration
+const SERVICE_CONFIG = {
+  mainnet: {
+    address: "0xca7ee55e4fc3251a",
+    keyId: 1,
+    privateKeyEnv: "PRIVATE_KEY_MAINNET",
+  },
+  testnet: {
+    address: "0x4a22e2fce83584aa",
+    keyId: 0,
+    privateKeyEnv: "PRIVATE_KEY_TESTNET",
+  },
+};
+
+// Get service account config for current network
+const serviceConfig = SERVICE_CONFIG[NETWORK as keyof typeof SERVICE_CONFIG] || SERVICE_CONFIG.mainnet;
+const SERVICE_ADDRESS = process.env.SERVICE_ACCOUNT_ADDRESS || serviceConfig.address;
+const SERVICE_PRIVATE_KEY = process.env.SERVICE_PRIVATE_KEY || process.env[serviceConfig.privateKeyEnv];
+const SERVICE_KEY_ID = parseInt(process.env.SERVICE_KEY_ID || serviceConfig.keyId.toString());
 
 // Hash message for signing (SHA3-256)
 const hashMessageHex = (msgHex: string): Buffer => {
@@ -263,12 +295,20 @@ transaction(planId: UInt64, totalFeeAmount: UFix64) {
 }
 `;
 
-// Configure FCL for mainnet
+// Configure FCL based on network
 const configureFCL = () => {
-  fcl.config({
-    "flow.network": "mainnet",
-    "accessNode.api": "https://rest-mainnet.onflow.org",
-  });
+  if (NETWORK === "testnet") {
+    fcl.config({
+      "flow.network": "testnet",
+      "accessNode.api": "https://rest-testnet.onflow.org",
+    });
+  } else {
+    fcl.config({
+      "flow.network": "mainnet",
+      "accessNode.api": "https://rest-mainnet.onflow.org",
+    });
+  }
+  console.log(`Relay API configured for ${NETWORK}`);
 };
 
 // Extract plan ID from transaction events

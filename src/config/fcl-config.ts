@@ -21,8 +21,8 @@ export const CONTRACTS = {
     SwapInterfaces: "0xb78ef7afa52ff906",
   },
   testnet: {
-    DCAServiceEVM: "",
-    DCAHandlerEVMV4: "",
+    DCAServiceEVM: "0x4a22e2fce83584aa",
+    DCAHandlerEVMV4: "0x4a22e2fce83584aa",
     FlowToken: "0x7e60df042a9c0868",
     FungibleToken: "0x9a0766d93b6608b7",
     FlowTransactionScheduler: "0x8c5303eaa26202d6",
@@ -44,18 +44,34 @@ export const CONTRACTS = {
   },
 };
 
-// EVM Token Addresses (mainnet)
-export const EVM_TOKENS = {
+// EVM Token Addresses per network
+const EVM_TOKENS_MAINNET = {
   WFLOW: "0xd3bF53DAC106A0290B0483EcBC89d40FcC961f3e",
   USDF: "0x2aaBea2058b5aC2D339b163C6Ab6f2b6d53aabED",
   USDC: "0xF1815bd50389c46847f0Bda824eC8da914045D14",
 };
 
-// DCA Service Shared COA Address (mainnet)
-export const DCA_COA_ADDRESS = "0x000000000000000000000002623833e1789dbd4a";
+const EVM_TOKENS_TESTNET = {
+  WFLOW: "0xd3bF53DAC106A0290B0483EcBC89d40FcC961f3e",  // Same as mainnet
+  USDF: "0xd7d43ab7b365f0d0789aE83F4385fA710FfdC98F",   // USDf testnet
+  USDC: "0xd431955D55a99EF69BEb96BA34718d0f9fBc91b1",   // MockUSDC testnet
+};
+
+// DCA Service Shared COA Addresses per network
+const DCA_COA_ADDRESSES = {
+  mainnet: "0x000000000000000000000002623833e1789dbd4a",
+  testnet: "0x000000000000000000000002c058dc16c13e4e2f",
+  emulator: "0x0000000000000000000000000000000000000000",
+};
 
 // Get current network from environment or default to mainnet
 export const NETWORK = (process.env.NEXT_PUBLIC_FLOW_NETWORK || "mainnet") as keyof typeof CONTRACTS;
+
+// Export network-aware EVM tokens
+export const EVM_TOKENS = NETWORK === "testnet" ? EVM_TOKENS_TESTNET : EVM_TOKENS_MAINNET;
+
+// Export network-aware COA address
+export const DCA_COA_ADDRESS = DCA_COA_ADDRESSES[NETWORK] || DCA_COA_ADDRESSES.mainnet;
 
 // Get contract addresses for current network
 export const getContractAddress = (contractName: keyof typeof CONTRACTS.mainnet): string => {
