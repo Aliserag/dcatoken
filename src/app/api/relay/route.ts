@@ -419,12 +419,13 @@ export async function POST(request: NextRequest) {
       }
 
       // Calculate total fee needed for all executions
-      // Based on testnet analysis with executionEffort: 5000
-      // - Observed per-execution cost: 0.735 - 0.77 FLOW
-      // - Average per-execution: ~0.755 FLOW
-      // Using 0.78 FLOW provides ~3% safety buffer over max observed
+      // Based on mainnet analysis with executionEffort: 5000
+      // - Actual fee estimate: ~1.0 FLOW per execution
+      // - Handler adds 10% buffer when rescheduling: ~1.1 FLOW
+      // - Initial schedule also takes ~1.05 FLOW
+      // Using 1.25 FLOW per execution to ensure sufficient funds for rescheduling
       const maxExecutions = params.maxExecutions || 10;
-      const feePerExecution = 0.78; // ~0.755 FLOW observed avg + 3% buffer
+      const feePerExecution = 1.25; // ~1.1 FLOW actual + 15% safety buffer
       const totalFeeAmount = (feePerExecution * maxExecutions).toFixed(8);
 
       console.log("Scheduling plan with fees:", {
