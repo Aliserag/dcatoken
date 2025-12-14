@@ -9,26 +9,39 @@ interface FlowProviderWrapperProps {
   children: ReactNode;
 }
 
+// Network-specific configuration
+const NETWORK_CONFIG = {
+  emulator: {
+    accessNodeUrl: "http://127.0.0.1:8888",
+    discoveryWallet: "http://localhost:8701/fcl/authn",
+    discoveryAuthnEndpoint: "http://localhost:8701/fcl/authn",
+  },
+  testnet: {
+    accessNodeUrl: "https://rest-testnet.onflow.org",
+    discoveryWallet: "https://fcl-discovery.onflow.org/testnet/authn",
+    discoveryAuthnEndpoint: "https://fcl-discovery.onflow.org/api/testnet/authn",
+  },
+  mainnet: {
+    accessNodeUrl: "https://rest-mainnet.onflow.org",
+    discoveryWallet: "https://fcl-discovery.onflow.org/authn",
+    discoveryAuthnEndpoint: "https://fcl-discovery.onflow.org/api/authn",
+  },
+};
+
 export function FlowProviderWrapper({ children }: FlowProviderWrapperProps) {
   useEffect(() => {
     configureFCL();
   }, []);
 
-  const isEmulator = NETWORK === "emulator";
+  const networkConfig = NETWORK_CONFIG[NETWORK] || NETWORK_CONFIG.mainnet;
 
   return (
     <FlowProvider
       config={{
         // Network configuration - dynamically set based on environment
-        accessNodeUrl: isEmulator
-          ? "http://127.0.0.1:8888"
-          : "https://rest-testnet.onflow.org",
-        discoveryWallet: isEmulator
-          ? "http://localhost:8701/fcl/authn"
-          : "https://fcl-discovery.onflow.org/testnet/authn",
-        discoveryAuthnEndpoint: isEmulator
-          ? "http://localhost:8701/fcl/authn"
-          : "https://fcl-discovery.onflow.org/api/testnet/authn",
+        accessNodeUrl: networkConfig.accessNodeUrl,
+        discoveryWallet: networkConfig.discoveryWallet,
+        discoveryAuthnEndpoint: networkConfig.discoveryAuthnEndpoint,
         flowNetwork: NETWORK,
 
         // App metadata

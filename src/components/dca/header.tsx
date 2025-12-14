@@ -2,28 +2,42 @@
 
 import { useEffect, useState } from "react";
 import * as fcl from "@onflow/fcl";
+import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
+import { injected } from "wagmi/connectors";
+import { useWalletType, WalletSelector } from "@/components/wallet-selector";
 
 export function DCAHeader() {
-  const [userAddress, setUserAddress] = useState<string | null>(null);
-  const [balance, setBalance] = useState<string>("0.00");
+  const { walletType, isMetamask, isFlow } = useWalletType();
+
+  // Flow wallet state
+  const [flowAddress, setFlowAddress] = useState<string | null>(null);
+  const [flowBalance, setFlowBalance] = useState<string>("0.00");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Subscribe to user authentication state
+  // Metamask wallet state (wagmi hooks)
+  const { address: evmAddress, isConnected: isEvmConnected } = useAccount();
+  const { connect: connectMetamask, isPending: isMetamaskConnecting } = useConnect();
+  const { disconnect: disconnectMetamask } = useDisconnect();
+  const { data: evmBalanceData } = useBalance({
+    address: evmAddress,
+  });
+
+  // Subscribe to Flow user authentication state
   useEffect(() => {
     const unsubscribe = fcl.currentUser.subscribe((currentUser) => {
       if (currentUser && currentUser.addr) {
-        setUserAddress(currentUser.addr);
-        fetchBalance(currentUser.addr);
+        setFlowAddress(currentUser.addr);
+        fetchFlowBalance(currentUser.addr);
       } else {
-        setUserAddress(null);
-        setBalance("0.00");
+        setFlowAddress(null);
+        setFlowBalance("0.00");
       }
     });
 
     return () => unsubscribe();
   }, []);
 
-  const fetchBalance = async (address: string) => {
+  const fetchFlowBalance = async (address: string) => {
     try {
       const result = await fcl.query({
         cadence: `
@@ -42,14 +56,14 @@ export function DCAHeader() {
         `,
         args: (arg, t) => [arg(address, t.Address)],
       });
-      setBalance(parseFloat(result).toFixed(2));
+      setFlowBalance(parseFloat(result).toFixed(2));
     } catch (error) {
       console.error("Error fetching balance:", error);
-      setBalance("0.00");
+      setFlowBalance("0.00");
     }
   };
 
-  const connectWallet = async () => {
+  const connectFlowWallet = async () => {
     setIsLoading(true);
     try {
       await fcl.authenticate();
@@ -60,13 +74,36 @@ export function DCAHeader() {
     }
   };
 
-  const disconnectWallet = () => {
+  const disconnectFlowWallet = () => {
     fcl.unauthenticate();
   };
 
-  const isConnected = userAddress !== null;
-  const shortAddress = userAddress
-    ? `${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`
+  const handleConnect = () => {
+    if (isMetamask) {
+      connectMetamask({ connector: injected() });
+    } else {
+      connectFlowWallet();
+    }
+  };
+
+  const handleDisconnect = () => {
+    if (isMetamask) {
+      disconnectMetamask();
+    } else {
+      disconnectFlowWallet();
+    }
+  };
+
+  // Determine current connection state based on wallet type
+  const isConnected = isMetamask ? isEvmConnected : flowAddress !== null;
+  const currentAddress = isMetamask ? evmAddress : flowAddress;
+  const currentBalance = isMetamask
+    ? (evmBalanceData ? (Number(evmBalanceData.value) / 10 ** evmBalanceData.decimals).toFixed(2) : "0.00")
+    : flowBalance;
+  const isConnecting = isMetamask ? isMetamaskConnecting : isLoading;
+
+  const shortAddress = currentAddress
+    ? `${currentAddress.slice(0, 6)}...${currentAddress.slice(-4)}`
     : "";
 
   return (
@@ -97,13 +134,16 @@ export function DCAHeader() {
             </div>
           </div>
 
-          {/* Wallet Connection */}
+          {/* Wallet Selector + Connection */}
           <div className="flex items-center gap-4">
+            {/* Wallet Type Selector */}
+            <WalletSelector className="hidden md:flex" />
+
             {isConnected ? (
               <>
                 <div className="hidden md:flex items-center gap-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl px-4 py-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-[#00EF8B] rounded-full animate-pulse" />
+                    <div className={`w-2 h-2 rounded-full animate-pulse ${isMetamask ? 'bg-orange-500' : 'bg-[#00EF8B]'}`} />
                     <span className="text-sm font-mono">{shortAddress}</span>
                   </div>
                   <div className="w-px h-6 bg-gray-200 dark:bg-[#2a2a2a]" />
@@ -111,11 +151,11 @@ export function DCAHeader() {
                     <span className="text-gray-600 dark:text-gray-400">
                       Balance:{" "}
                     </span>
-                    <span className="font-bold font-mono">{balance} FLOW</span>
+                    <span className="font-bold font-mono">{currentBalance} FLOW</span>
                   </div>
                 </div>
                 <button
-                  onClick={disconnectWallet}
+                  onClick={handleDisconnect}
                   className="px-4 py-2 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#3a3a3a] rounded-xl text-sm font-medium transition-colors cursor-pointer"
                 >
                   Disconnect
@@ -123,11 +163,11 @@ export function DCAHeader() {
               </>
             ) : (
               <button
-                onClick={connectWallet}
-                disabled={isLoading}
-                className="bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-400 disabled:cursor-not-allowed text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-[#00EF8B]/30 disabled:shadow-none disabled:transform-none cursor-pointer"
+                onClick={handleConnect}
+                disabled={isConnecting}
+                className={`${isMetamask ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/30' : 'bg-[#00EF8B] hover:bg-[#00D57A] shadow-[#00EF8B]/30'} disabled:bg-gray-400 disabled:cursor-not-allowed text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg disabled:shadow-none disabled:transform-none cursor-pointer`}
               >
-                {isLoading ? "Connecting..." : "Connect Wallet"}
+                {isConnecting ? "Connecting..." : `Connect ${isMetamask ? 'Metamask' : 'Flow Wallet'}`}
               </button>
             )}
           </div>
