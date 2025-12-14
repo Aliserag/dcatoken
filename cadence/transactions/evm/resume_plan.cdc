@@ -14,7 +14,7 @@ transaction(planId: UInt64, delaySeconds: UFix64?) {
             ? getCurrentBlock().timestamp + delaySeconds!
             : nil
 
-        DCAServiceEVM.resumePlan(planId: planId, nextExecutionTime: nextExecutionTime)
+        DCAServiceEVM.resumePlan(planId: planId, nextExecTime: nextExecutionTime)
         log("Resumed plan ".concat(planId.toString()))
     }
 }

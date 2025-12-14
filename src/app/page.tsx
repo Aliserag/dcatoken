@@ -23,14 +23,6 @@ export default function Home() {
           <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto mb-8">
             Set it and forget it. Automate FLOW → USDF swaps on your schedule.
           </p>
-
-          {/* CTA Button */}
-          <button
-            onClick={() => setActiveTab("create")}
-            className="px-8 py-4 bg-[#00EF8B] text-black font-bold rounded-xl hover:shadow-lg hover:shadow-[#00EF8B]/30 transition-all cursor-pointer"
-          >
-            Get Started
-          </button>
         </div>
 
         {/* Tab Navigation */}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import * as fcl from "@onflow/fcl";
-import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt, useBalance } from "wagmi";
 import { parseUnits } from "viem";
 import { useTransaction } from "@/hooks/use-transaction";
 import { useWalletType } from "@/components/wallet-selector";
@@ -103,6 +103,22 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
       enabled: isMetamask && isEvmConnected && !!evmAddress,
     },
   });
+
+  // Fetch Metamask token balance (WFLOW or USDF depending on sourceToken)
+  const { data: metamaskTokenBalance, isLoading: isLoadingMetamaskBalance } = useReadContract({
+    address: sourceToken.address as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: evmAddress ? [evmAddress] : undefined,
+    query: {
+      enabled: isMetamask && isEvmConnected && !!evmAddress,
+    },
+  });
+
+  // Format Metamask balance for display
+  const formattedMetamaskBalance = metamaskTokenBalance !== undefined && metamaskTokenBalance !== null
+    ? (Number(metamaskTokenBalance) / 10 ** sourceToken.decimals).toFixed(2)
+    : "0.00";
 
   // Refetch allowance after approval success
   useEffect(() => {
@@ -349,7 +365,7 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
         maxSlippageBps: parseInt(slippage) * 100, // Convert % to bps
         maxExecutions: maxExecutions ? parseInt(maxExecutions) : null,
         feeTier: 3000, // 0.3% Uniswap fee tier
-        firstExecutionDelay: 120.0, // 120 seconds before first execution
+        firstExecutionDelay: parseFloat(interval), // First execution after one interval
       });
 
       if (result.success) {
@@ -411,10 +427,12 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
   // FLOW/WFLOW/USDF price estimation (FLOW = WFLOW = same price)
   const flowPrice = tokenPrices.FLOW || 0;
   const usdfPrice = tokenPrices.USDF || 1.0;
-  const sourcePrice = (sourceToken.symbol === "WFLOW" || sourceToken.symbol === "FLOW") ? flowPrice : usdfPrice;
-  const targetPrice = (targetToken.symbol === "WFLOW" || targetToken.symbol === "FLOW") ? flowPrice : usdfPrice;
-  const exchangeRate = sourcePrice && targetPrice ? sourcePrice / targetPrice : 0;
-  const estimatedOutput = exchangeRate > 0 ? totalInvestment * exchangeRate : 0;
+  const isFlowOrWflow = (symbol: string) => symbol === "FLOW" || symbol === "WFLOW";
+  const sourcePrice = isFlowOrWflow(sourceToken.symbol) ? flowPrice : usdfPrice;
+  const targetPrice = isFlowOrWflow(targetToken.symbol) ? flowPrice : usdfPrice;
+  // Only calculate exchange rate if we have valid prices
+  const exchangeRate = (sourcePrice > 0 && targetPrice > 0) ? sourcePrice / targetPrice : 0;
+  const estimatedOutput = (exchangeRate > 0 && amountNum > 0) ? totalInvestment * exchangeRate : 0;
 
   // FLOW and WFLOW are equivalent for DCA purposes
   const isFlowToken = (symbol: string) => symbol === "FLOW" || symbol === "WFLOW";
@@ -441,7 +459,11 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-600 dark:text-gray-400">You invest</span>
               <span className="text-xs text-gray-500">
-                FLOW Balance: {loadingBalance ? "..." : flowBalance}
+                {isFlow ? (
+                  <>FLOW Balance: {loadingBalance ? "..." : flowBalance}</>
+                ) : isEvmConnected ? (
+                  <>{sourceToken.symbol} Balance: {isLoadingMetamaskBalance ? "..." : formattedMetamaskBalance}</>
+                ) : null}
               </span>
             </div>
             <div className="flex items-center gap-3 bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
@@ -555,16 +577,20 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
         {/* Max Executions */}
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Number of Investments (Optional)
+            Number of Investments
           </label>
           <input
             type="number"
             min="1"
             value={maxExecutions}
             onChange={(e) => setMaxExecutions(e.target.value)}
-            placeholder="Leave empty for unlimited"
+            placeholder="e.g., 10"
+            required
             className="w-full px-4 py-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl focus:border-[#00EF8B] outline-none"
           />
+          <p className="text-xs text-gray-500">
+            Total: {totalInvestment.toFixed(2)} {sourceToken.symbol} will be allocated for DCA
+          </p>
         </div>
 
         {/* Price Info */}
@@ -610,7 +636,7 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
               <button
                 type="button"
                 onClick={handleMetamaskApprove}
-                disabled={isApproving || isApproveConfirming || !amountPerInterval}
+                disabled={isApproving || isApproveConfirming || !amountPerInterval || !maxExecutions}
                 className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer"
               >
                 {(isApproving || isApproveConfirming) ? (
@@ -648,7 +674,7 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
 
               <button
                 type="submit"
-                disabled={isCreatingPlan || !amountPerInterval || isSameToken}
+                disabled={isCreatingPlan || !amountPerInterval || !maxExecutions || isSameToken}
                 className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold rounded-xl hover:shadow-lg disabled:opacity-50 cursor-pointer"
               >
                 {isCreatingPlan ? (
@@ -733,7 +759,7 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
               <button
                 type="button"
                 onClick={handleWrapFlow}
-                disabled={txLoading || !amountPerInterval}
+                disabled={txLoading || !amountPerInterval || !maxExecutions}
                 className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer"
               >
                 {txLoading ? (
@@ -794,7 +820,7 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
 
               <button
                 type="submit"
-                disabled={isCreatingPlan || txLoading || !amountPerInterval || isSameToken}
+                disabled={isCreatingPlan || txLoading || !amountPerInterval || !maxExecutions || isSameToken}
                 className="w-full py-4 bg-gradient-to-r from-[#00EF8B] to-[#00D9FF] text-black font-bold rounded-xl hover:shadow-lg disabled:opacity-50 cursor-pointer"
               >
                 {(isCreatingPlan || txLoading) ? (
