@@ -85,31 +85,31 @@ export function useTransaction() {
 
         unsub(); // Cleanup subscription
 
-        if ((sealedTx.statusCode as number) === 0 || (sealedTx.statusCode as number) === 4) {
-          // Success (UNKNOWN = 0 is actually success in some cases, SEALED = 4)
-          setState((prev) => ({ ...prev, status: TransactionStatus.SEALED }));
-          return {
-            success: true,
-            txId: transactionId,
-            events: sealedTx.events || []
-          };
-        } else {
-          // Error
-          const errorMsg =
-            sealedTx.errorMessage || "Transaction failed with unknown error";
+        // Check for errors first - errorMessage takes priority
+        if (sealedTx.errorMessage) {
           setState((prev) => ({
             ...prev,
             status: TransactionStatus.ERROR,
-            error: errorMsg,
+            error: sealedTx.errorMessage,
             errorCode: sealedTx.statusCode,
           }));
           return {
             success: false,
             txId: transactionId,
-            error: errorMsg,
+            error: sealedTx.errorMessage,
             errorCode: sealedTx.statusCode,
           };
         }
+
+        // onceSealed() only resolves when sealed, so if we get here without error, it's success
+        // Status code 4 = SEALED, but sometimes FCL returns 0 after onceSealed()
+        // If no errorMessage, we trust that onceSealed() worked
+        setState((prev) => ({ ...prev, status: TransactionStatus.SEALED }));
+        return {
+          success: true,
+          txId: transactionId,
+          events: sealedTx.events || []
+        };
       } catch (error: any) {
         console.error("Transaction execution failed:", error);
         const errorMsg = error.message || "Failed to execute transaction";

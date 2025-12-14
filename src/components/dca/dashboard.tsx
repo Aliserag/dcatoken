@@ -2,20 +2,35 @@
 
 import { useState, useEffect } from "react";
 import * as fcl from "@onflow/fcl";
+import { useAccount } from "wagmi";
+import { useWalletType } from "@/components/wallet-selector";
 import {
-  GET_ALL_PLANS_SCRIPT,
-  GET_ALL_PLANS_SCRIPT_V3,
-  GET_ALL_PLANS_SCRIPT_UNIFIED,
+  GET_USER_PLANS_SCRIPT,
+  GET_USER_COA_SCRIPT,
   PAUSE_PLAN_TX,
   RESUME_PLAN_TX,
-  PAUSE_PLAN_TX_UNIFIED,
-  RESUME_PLAN_TX_UNIFIED,
-  INIT_DCA_HANDLER_TX,
-  FUND_FEE_VAULT_TX,
-  SCHEDULE_DCA_PLAN_TX,
 } from "@/lib/cadence-transactions";
 import { useTransaction } from "@/hooks/use-transaction";
 import { useFlowPrice } from "@/hooks/use-flow-price";
+import { EVM_TOKENS } from "@/config/fcl-config";
+
+interface EVMPlanData {
+  id: string;
+  userEVMAddressBytes: number[];
+  sourceTokenBytes: number[];
+  targetTokenBytes: number[];
+  amountPerInterval: string;
+  intervalSeconds: string;
+  maxSlippageBps: string;
+  maxExecutions: string | null;
+  feeTier: string;
+  createdAt: string;
+  statusRaw: string;
+  nextExecutionTime: string | null;
+  executionCount: string;
+  totalSourceSpent: string;
+  totalTargetReceived: string;
+}
 
 interface DCAPlan {
   id: number;
@@ -24,46 +39,25 @@ interface DCAPlan {
   totalInvested: string;
   totalAcquired: string;
   avgPrice: string;
-  sourceToken: string;  // Token being spent (e.g., "FLOW" or "USDC")
-  targetToken: string;  // Token being acquired (e.g., "FLOW" or "USDC")
+  sourceToken: string;
+  targetToken: string;
   executionCount: number;
   maxExecutions: number | null;
-  status: "active" | "paused" | "completed";
+  status: "active" | "paused" | "completed" | "cancelled";
   nextExecution: string;
   createdAt: string;
   intervalSeconds: number;
-  isScheduled: boolean; // Track if plan is scheduled with Flow scheduler
 }
 
-// Cadence plan structure from blockchain (matches DCAPlan.PlanDetails)
-interface CadencePlanDetails {
-  id: string; // Changed from planId to match DCAPlan.PlanDetails struct
-  sourceTokenType: string;
-  targetTokenType: string;
-  amountPerInterval: string;
-  intervalSeconds: string;
-  maxSlippageBps: string;
-  maxExecutions: string | null;
-  executionCount: string;
-  totalSourceInvested: string;
-  totalTargetAcquired: string;
-  avgExecutionPriceFP128: string;
-  avgExecutionPriceDisplay: string;
-  status: number;
-  nextExecutionTime: string;
-  createdAt: string;
-  lastExecutedAt: string | null;
-}
-
-// Countdown component for next execution
+// Countdown Timer Component
 function CountdownTimer({
   targetTimestamp,
   onCountdownComplete,
-  planStatus
+  planStatus,
 }: {
   targetTimestamp: string;
   onCountdownComplete?: () => void;
-  planStatus?: "active" | "paused" | "completed";
+  planStatus?: string;
 }) {
   const [timeLeft, setTimeLeft] = useState<{
     days: number;
@@ -77,30 +71,23 @@ function CountdownTimer({
     const calculateTimeLeft = () => {
       const timestampNum = parseFloat(targetTimestamp);
 
-      // Handle invalid timestamps (completed plans, etc.)
       if (isNaN(timestampNum) || timestampNum <= 0) {
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
         return;
       }
 
-      const targetTime = timestampNum * 1000; // Convert to milliseconds
+      const targetTime = timestampNum * 1000;
       const now = Date.now();
       const difference = targetTime - now;
 
       if (difference <= 0) {
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+        const timeSinceTarget = -difference;
+        const isRecentlyPassed = timeSinceTarget < 2 * 60 * 1000;
 
-        // Only trigger callback if recently passed (within 2 minutes) to avoid infinite loops for stalled plans
-        const timeSinceTarget = -difference; // How long ago the target time passed
-        const isRecentlyPassed = timeSinceTarget < 2 * 60 * 1000; // Within 2 minutes
-
-        // Trigger callback once when countdown hits zero (only for recently passed, not stalled)
         if (!hasTriggered && onCountdownComplete && isRecentlyPassed) {
           setHasTriggered(true);
-          // Wait 5 seconds after execution time to allow for blockchain confirmation
-          setTimeout(() => {
-            onCountdownComplete();
-          }, 5000);
+          setTimeout(() => onCountdownComplete(), 5000);
         }
         return;
       }
@@ -113,48 +100,49 @@ function CountdownTimer({
       setTimeLeft({ days, hours, minutes, seconds });
     };
 
-    // Initial calculation
     calculateTimeLeft();
-
-    // Update every second
     const interval = setInterval(calculateTimeLeft, 1000);
-
     return () => clearInterval(interval);
   }, [targetTimestamp, hasTriggered, onCountdownComplete]);
 
-  // Reset trigger when timestamp changes (new execution scheduled)
   useEffect(() => {
     setHasTriggered(false);
   }, [targetTimestamp]);
 
   if (!timeLeft) return <span className="text-sm text-gray-500">Loading...</span>;
 
-  // Handle zero countdown differently based on context
-  if (timeLeft.days === 0 && timeLeft.hours === 0 && timeLeft.minutes === 0 && timeLeft.seconds === 0) {
-    // Show different message based on plan status
+  if (
+    timeLeft.days === 0 &&
+    timeLeft.hours === 0 &&
+    timeLeft.minutes === 0 &&
+    timeLeft.seconds === 0
+  ) {
     if (planStatus === "completed") {
       return <span className="text-sm text-gray-500">Plan completed</span>;
     }
     if (planStatus === "paused") {
       return <span className="text-sm text-yellow-500">Paused</span>;
     }
+    if (planStatus === "cancelled") {
+      return <span className="text-sm text-red-500">Cancelled</span>;
+    }
 
-    // Plan is active - check if it's stalled (execution time passed more than 2 minutes ago)
     const timestampNum = parseFloat(targetTimestamp);
     const targetTime = timestampNum * 1000;
     const timeSinceTarget = Date.now() - targetTime;
-    const isStalled = timeSinceTarget > 2 * 60 * 1000; // More than 2 minutes past execution time
+    const isStalled = timeSinceTarget > 2 * 60 * 1000;
 
     if (isStalled) {
       return (
         <div className="flex items-center gap-2">
-          <span className="text-sm text-orange-500">Stalled</span>
-          <span className="text-xs text-gray-500">(check balance/fees)</span>
+          <span className="text-sm text-orange-500">Awaiting execution...</span>
+          <svg className="animate-pulse h-3 w-3 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="12" r="10" />
+          </svg>
         </div>
       );
     }
 
-    // Recently hit execution time - show executing state
     return (
       <div className="flex items-center gap-2">
         <span className="text-sm text-[#00EF8B]">Executing...</span>
@@ -174,175 +162,168 @@ function CountdownTimer({
           <span className="text-gray-500">d</span>
         </>
       )}
-      <span className="font-bold">{String(timeLeft.hours).padStart(2, '0')}</span>
+      <span className="font-bold">{String(timeLeft.hours).padStart(2, "0")}</span>
       <span className="text-gray-500">:</span>
-      <span className="font-bold">{String(timeLeft.minutes).padStart(2, '0')}</span>
+      <span className="font-bold">{String(timeLeft.minutes).padStart(2, "0")}</span>
       <span className="text-gray-500">:</span>
-      <span className="font-bold">{String(timeLeft.seconds).padStart(2, '0')}</span>
+      <span className="font-bold">{String(timeLeft.seconds).padStart(2, "0")}</span>
     </div>
   );
 }
 
+// Helper to convert EVM address bytes to hex string
+function bytesToHex(bytes: number[]): string {
+  return "0x" + bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Helper to get token symbol from EVM address
+function getTokenSymbol(address: string): string {
+  const addrLower = address.toLowerCase();
+  if (addrLower === EVM_TOKENS.WFLOW.toLowerCase()) return "FLOW";  // Show as FLOW (user-friendly)
+  if (addrLower === EVM_TOKENS.USDF.toLowerCase()) return "USDF";
+  if (addrLower === EVM_TOKENS.USDC.toLowerCase()) return "USDC";
+  // Show truncated address for unknown tokens instead of generic "TOKEN"
+  if (address.length >= 10) {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  }
+  return address;
+}
+
 export function DCADashboard() {
+  const { isMetamask, isFlow } = useWalletType();
+  const { address: evmAddress, isConnected: isEvmConnected } = useAccount();
+
   const [userAddress, setUserAddress] = useState<string | null>(null);
+  const [userCOAAddress, setUserCOAAddress] = useState<string | null>(null);
   const [plans, setPlans] = useState<DCAPlan[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'paused'>('all');
   const { executeTransaction } = useTransaction();
   const { priceData } = useFlowPrice();
 
-  // Subscribe to user authentication
+  // Handle Flow wallet authentication
   useEffect(() => {
+    if (isMetamask) return; // Skip for Metamask users
+
     const unsubscribe = fcl.currentUser.subscribe((currentUser) => {
       if (currentUser && currentUser.addr) {
         setUserAddress(currentUser.addr);
-        fetchPlans(currentUser.addr);
+        fetchUserCOA(currentUser.addr);
       } else {
         setUserAddress(null);
+        setUserCOAAddress(null);
         setPlans([]);
       }
     });
-
     return () => unsubscribe();
-  }, []);
+  }, [isMetamask]);
 
-  const fetchPlans = async (address: string) => {
+  // Handle Metamask wallet - fetch plans directly using EVM address
+  useEffect(() => {
+    if (!isMetamask || !isEvmConnected || !evmAddress) {
+      if (isMetamask) {
+        setPlans([]);
+      }
+      return;
+    }
+
+    // For Metamask users, their EVM address IS their user address
+    setUserCOAAddress(evmAddress);
+    fetchPlans(evmAddress);
+  }, [isMetamask, isEvmConnected, evmAddress]);
+
+  const fetchUserCOA = async (address: string) => {
+    try {
+      const coaAddress: string | null = await fcl.query({
+        cadence: GET_USER_COA_SCRIPT,
+        args: (arg, t) => [arg(address, t.Address)],
+      });
+      if (coaAddress) {
+        setUserCOAAddress(coaAddress);
+        fetchPlans(coaAddress);
+      } else {
+        setUserCOAAddress(null);
+        setPlans([]);
+      }
+    } catch (error) {
+      console.error("Error fetching COA:", error);
+      setUserCOAAddress(null);
+      setPlans([]);
+    }
+  };
+
+  const fetchPlans = async (coaAddress: string) => {
     setLoading(true);
     setError(null);
     try {
-      // Query V2, V3, and Unified plans in parallel
-      const [v2Plans, v3Plans, unifiedPlans] = await Promise.all([
-        fcl.query({
-          cadence: GET_ALL_PLANS_SCRIPT,
-          args: (arg, t) => [arg(address, t.Address)],
-        }).catch(() => [] as CadencePlanDetails[]),
-        fcl.query({
-          cadence: GET_ALL_PLANS_SCRIPT_V3,
-          args: (arg, t) => [arg(address, t.Address)],
-        }).catch(() => [] as CadencePlanDetails[]),
-        fcl.query({
-          cadence: GET_ALL_PLANS_SCRIPT_UNIFIED,
-          args: (arg, t) => [arg(address, t.Address)],
-        }).catch(() => [] as CadencePlanDetails[]),
-      ]);
+      const evmPlans: EVMPlanData[] = await fcl.query({
+        cadence: GET_USER_PLANS_SCRIPT,
+        args: (arg, t) => [arg(coaAddress, t.String)],
+      });
 
-      // Merge all plans (V3 offset by 10000, Unified offset by 20000 to avoid conflicts)
-      const cadencePlans: CadencePlanDetails[] = [
-        ...v2Plans,
-        ...v3Plans.map((plan: CadencePlanDetails) => ({
-          ...plan,
-          id: String(parseInt(plan.id) + 10000), // Offset V3 plan IDs
-        })),
-        ...unifiedPlans.map((plan: CadencePlanDetails) => ({
-          ...plan,
-          id: String(parseInt(plan.id) + 20000), // Offset Unified plan IDs
-        })),
-      ];
+      console.log("Fetched EVM plans:", evmPlans);
 
-      console.log("Fetched V2 plans:", v2Plans.length, "V3 plans:", v3Plans.length, "Unified plans:", unifiedPlans.length);
+      const transformedPlans: DCAPlan[] = evmPlans.map((p) => {
+        const sourceTokenAddr = bytesToHex(p.sourceTokenBytes);
+        const targetTokenAddr = bytesToHex(p.targetTokenBytes);
+        const sourceToken = getTokenSymbol(sourceTokenAddr);
+        const targetToken = getTokenSymbol(targetTokenAddr);
 
-      // Helper to extract token symbol from full type identifier
-      // e.g., "A.1654653399040a61.FlowToken.Vault" -> "FLOW"
-      // e.g., "A.1e4aa0b87d10b141.EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14.Vault" -> "USDC"
-      // e.g., "A.1e4aa0b87d10b141.EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed.Vault" -> "USDF"
-      const getTokenSymbol = (typeId: string): string => {
-        if (typeId.includes('FlowToken')) return 'FLOW';
-        // Check USDF first (specific contract identifier)
-        if (typeId.includes('EVMVMBridgedToken_2aabea2058b5ac2d339b163c6ab6f2b6d53aabed')) return 'USDF';
-        // Check USDC (specific contract identifier)
-        if (typeId.includes('EVMVMBridgedToken_f1815bd50389c46847f0bda824ec8da914045d14')) return 'USDC';
-        // Fallback for other EVMVMBridgedToken variants
-        if (typeId.includes('EVMVMBridgedToken')) return 'USDC';
-        if (typeId.includes('TeleportedTetherToken')) return 'USDT';
-        if (typeId.includes('FiatToken')) return 'USDC';
-        return 'TOKEN';
-      };
-
-      // Transform Cadence plan data to UI format
-      const transformedPlans: DCAPlan[] = cadencePlans.map((cp) => {
-
-        // Convert interval seconds to frequency label
-        const intervalDays = Math.floor(
-          parseInt(cp.intervalSeconds) / 86400
-        );
+        // Convert interval to frequency label
+        const intervalSec = parseInt(p.intervalSeconds);
         let frequency = "Custom";
-        if (intervalDays === 1) frequency = "Daily";
-        else if (intervalDays === 7) frequency = "Weekly";
-        else if (intervalDays === 14) frequency = "Bi-weekly";
-        else if (intervalDays === 30) frequency = "Monthly";
+        if (intervalSec === 60) frequency = "Minutely";
+        else if (intervalSec === 3600) frequency = "Hourly";
+        else if (intervalSec === 86400) frequency = "Daily";
+        else if (intervalSec === 604800) frequency = "Weekly";
 
-        // Convert status number to label (handle both string and number types from FCL)
-        const statusNum = typeof cp.status === 'string' ? parseInt(cp.status) : cp.status;
-        let status: "active" | "paused" | "completed" = "active";
+        // Convert status (0=Active, 1=Paused, 2=Completed, 3=Cancelled)
+        const statusNum = parseInt(p.statusRaw);
+        let status: "active" | "paused" | "completed" | "cancelled" = "active";
         if (statusNum === 1) status = "paused";
         else if (statusNum === 2) status = "completed";
+        else if (statusNum === 3) status = "cancelled";
 
-        // Parse amounts (they come as strings with decimals)
-        const totalInvested = parseFloat(cp.totalSourceInvested).toFixed(2);
-        const totalAcquired = parseFloat(cp.totalTargetAcquired).toFixed(2);
+        // Convert amounts from wei to display units
+        const amountWei = BigInt(p.amountPerInterval);
+        const totalSpentWei = BigInt(p.totalSourceSpent);
+        const totalReceivedWei = BigInt(p.totalTargetReceived);
 
-        // Calculate average price (FLOW per USDC - how much FLOW you get per USDC spent)
+        // Determine decimals based on token
+        const sourceDecimals = sourceToken === "USDF" || sourceToken === "USDC" ? 6 : 18;
+        const targetDecimals = targetToken === "USDF" || targetToken === "USDC" ? 6 : 18;
+
+        const amount = (Number(amountWei) / 10 ** sourceDecimals).toFixed(4);
+        const totalInvested = (Number(totalSpentWei) / 10 ** sourceDecimals).toFixed(4);
+        const totalAcquired = (Number(totalReceivedWei) / 10 ** targetDecimals).toFixed(4);
+
+        // Calculate average price
         let avgPrice = "0.00";
-        if (parseFloat(totalInvested) > 0) {
-          avgPrice = (
-            parseFloat(totalAcquired) / parseFloat(totalInvested)
-          ).toFixed(4); // Use 4 decimals for better precision
+        if (Number(totalInvested) > 0) {
+          avgPrice = (Number(totalAcquired) / Number(totalInvested)).toFixed(6);
         }
 
-        // Format next execution time (handle invalid/null timestamps for completed plans)
-        const nextExecutionTimestamp = parseFloat(cp.nextExecutionTime);
-        const nextExecutionTime = !isNaN(nextExecutionTimestamp) && nextExecutionTimestamp > 0
-          ? new Date(nextExecutionTimestamp * 1000)
-          : null;
-        const nextExecution = nextExecutionTime && !isNaN(nextExecutionTime.getTime())
-          ? nextExecutionTime.toISOString().split("T")[0]
-          : "N/A";
-
-        // Format created at time
-        const createdAtTimestamp = parseFloat(cp.createdAt);
-        const createdAtTime = !isNaN(createdAtTimestamp) && createdAtTimestamp > 0
-          ? new Date(createdAtTimestamp * 1000)
-          : new Date();
-        const createdAt = !isNaN(createdAtTime.getTime())
-          ? createdAtTime.toISOString().split("T")[0]
-          : "N/A";
-
-        // Extract token symbols from type identifiers
-        const sourceToken = getTokenSymbol(cp.sourceTokenType);
-        const targetToken = getTokenSymbol(cp.targetTokenType);
-
         return {
-          id: parseInt(cp.id, 10),
-          amount: parseFloat(cp.amountPerInterval).toFixed(2),
+          id: parseInt(p.id),
+          amount,
           frequency,
           totalInvested,
           totalAcquired,
           avgPrice,
           sourceToken,
           targetToken,
-          executionCount: parseInt(cp.executionCount) || 0,
-          maxExecutions: cp.maxExecutions
-            ? parseInt(cp.maxExecutions)
-            : null,
+          executionCount: parseInt(p.executionCount) || 0,
+          maxExecutions: p.maxExecutions ? parseInt(p.maxExecutions) : null,
           status,
-          // Store timestamp for countdown (use "0" for nil/invalid to trigger completed state)
-          // FCL may return null, undefined, "nil", or empty string for optional nil values
-          nextExecution: cp.nextExecutionTime ? String(cp.nextExecutionTime) : "0",
-          createdAt,
-          intervalSeconds: parseInt(cp.intervalSeconds),
-          // Plan is scheduled if: executed at least once, OR has a next execution time set, OR status is not active
-          isScheduled: parseInt(cp.executionCount) > 0 || (cp.nextExecutionTime && parseFloat(cp.nextExecutionTime) > 0) || status !== "active",
+          nextExecution: p.nextExecutionTime || "0",
+          createdAt: new Date(parseFloat(p.createdAt) * 1000).toISOString().split("T")[0],
+          intervalSeconds: intervalSec,
         };
       });
 
-      // Sort plans by most recent first (based on createdAt timestamp)
-      const sortedPlans = transformedPlans.sort((a, b) => {
-        // Parse createdAt timestamps and sort descending (newest first)
-        const timeA = new Date(a.createdAt).getTime();
-        const timeB = new Date(b.createdAt).getTime();
-        return timeB - timeA;
-      });
-
+      // Sort by ID descending (newest first)
+      const sortedPlans = transformedPlans.sort((a, b) => b.id - a.id);
       setPlans(sortedPlans);
     } catch (err: any) {
       console.error("Error fetching plans:", err);
@@ -361,6 +342,8 @@ export function DCADashboard() {
         return "bg-yellow-500 text-black";
       case "completed":
         return "bg-gray-500 text-white";
+      case "cancelled":
+        return "bg-red-500 text-white";
       default:
         return "bg-gray-300 text-black";
     }
@@ -378,139 +361,62 @@ export function DCADashboard() {
       500
     );
 
-    if (result.success && userAddress) {
-      // Refresh plans after pausing
-      setTimeout(() => fetchPlans(userAddress), 2000);
+    if (result.success && userCOAAddress) {
+      setTimeout(() => fetchPlans(userCOAAddress), 2000);
     }
   };
 
   const handleResumePlan = async (planId: number) => {
     const result = await executeTransaction(
       RESUME_PLAN_TX,
-      (arg, t) => [
-        arg(planId.toString(), t.UInt64),
-        arg(null, t.Optional(t.UInt64)) // Use nil for delaySeconds (resume with default interval)
-      ],
+      (arg, t) => [arg(planId.toString(), t.UInt64), arg(null, t.Optional(t.UFix64))],
       500
     );
 
-    if (result.success && userAddress) {
-      // Refresh plans after resuming
-      setTimeout(() => fetchPlans(userAddress), 2000);
+    if (result.success && userCOAAddress) {
+      setTimeout(() => fetchPlans(userCOAAddress), 2000);
     }
   };
 
-  const handleInitializeHandler = async () => {
-    const result = await executeTransaction(
-      INIT_DCA_HANDLER_TX,
-      (arg, t) => [],
-      500
-    );
+  // Filter plans based on status
+  const filteredPlans = statusFilter === 'all'
+    ? plans
+    : plans.filter(p => p.status === statusFilter);
 
-    if (result.success) {
-      alert("Handler initialized successfully! You can now schedule plans.");
-    }
-  };
-
-  const handleSchedulePlan = async (planId: number, intervalSeconds: number, maxExecutions: number | null) => {
-    // Use interval as delay for first execution
-    const delaySeconds = intervalSeconds.toString() + ".0";
-    const numExecutions = maxExecutions || 1000; // Default to 1000 if unlimited
-
-    // First, fund the fee vault
-    const fundResult = await executeTransaction(
-      FUND_FEE_VAULT_TX,
-      (arg, t) => [
-        arg(planId.toString(), t.UInt64),
-        arg(numExecutions.toString(), t.UInt64),
-        arg(delaySeconds, t.UFix64),
-        arg("1", t.UInt8), // Priority: Medium
-        arg("5000", t.UInt64) // Execution effort
-      ],
-      500
-    );
-
-    if (!fundResult.success) {
-      alert(`Failed to fund fee vault: ${fundResult.error}. Scheduling may fail.`);
-    }
-
-    // Then schedule the plan
-    const result = await executeTransaction(
-      SCHEDULE_DCA_PLAN_TX,
-      (arg, t) => [
-        arg(planId.toString(), t.UInt64),
-        arg(delaySeconds, t.UFix64),
-        arg("1", t.UInt8), // Priority: Medium
-        arg("5000", t.UInt64) // Execution effort (max 7500 for Medium priority)
-      ],
-      500
-    );
-
-    if (result.success && userAddress) {
-      alert("Plan scheduled successfully! Autonomous execution will begin soon.");
-      setTimeout(() => fetchPlans(userAddress), 2000);
-    }
-  };
-
-  // Calculate totals grouped by token type
+  // Calculate totals (always show totals from all plans, regardless of filter)
   const totalInvestedByToken: Record<string, number> = {};
   const totalAcquiredByToken: Record<string, number> = {};
 
-  plans.forEach(plan => {
-    const sourceToken = plan.sourceToken || 'TOKEN';
-    const targetToken = plan.targetToken || 'TOKEN';
+  plans.forEach((plan) => {
     const invested = parseFloat(plan.totalInvested) || 0;
     const acquired = parseFloat(plan.totalAcquired) || 0;
-
-    totalInvestedByToken[sourceToken] = (totalInvestedByToken[sourceToken] || 0) + invested;
-    totalAcquiredByToken[targetToken] = (totalAcquiredByToken[targetToken] || 0) + acquired;
+    totalInvestedByToken[plan.sourceToken] = (totalInvestedByToken[plan.sourceToken] || 0) + invested;
+    totalAcquiredByToken[plan.targetToken] = (totalAcquiredByToken[plan.targetToken] || 0) + acquired;
   });
 
-  // For backward compatibility and overall stats
-  const totalInvested = plans.reduce(
-    (sum, plan) => sum + parseFloat(plan.totalInvested),
-    0
-  );
-  const totalAcquired = plans.reduce(
-    (sum, plan) => sum + parseFloat(plan.totalAcquired),
-    0
-  );
-
-  // Get unique token types for display
+  const activePlansCount = plans.filter((p) => p.status === "active").length;
+  const completedPlansCount = plans.filter((p) => p.status === "completed").length;
+  const pausedPlansCount = plans.filter((p) => p.status === "paused").length;
   const investedTokens = Object.keys(totalInvestedByToken);
   const acquiredTokens = Object.keys(totalAcquiredByToken);
-
-  // Calculate total value in USDT for display
-  const totalInvestedUSDT = priceData ? totalInvested * priceData.usdt : 0;
-  const totalAcquiredUSDT = priceData ? totalAcquired * priceData.usdt : 0;
-
-  // Show all plans (both scheduled and unscheduled)
-  // This allows users to see plans that were just created but not yet scheduled
-  const displayPlans = plans;
-  const activePlansCount = plans.filter(plan => plan.status === "active").length;
-  const scheduledCount = plans.filter(plan => plan.isScheduled).length;
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6">
       {/* Header Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-            Active Plans
-          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Active Plans</p>
           <p className="text-3xl font-bold">{activePlansCount}</p>
         </div>
 
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-            Total Invested
-          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">FLOW Invested</p>
           <div className="space-y-1">
             {investedTokens.length > 0 ? (
-              investedTokens.map(token => (
+              investedTokens.map((token) => (
                 <p key={token} className="text-2xl font-bold font-mono">
                   {totalInvestedByToken[token].toFixed(2)}{" "}
-                  <span className={`text-lg ${token === 'FLOW' ? 'text-green-500' : 'text-blue-500'}`}>
+                  <span className={`text-lg ${token === "FLOW" ? "text-[#00EF8B]" : "text-blue-500"}`}>
                     {token}
                   </span>
                 </p>
@@ -522,15 +428,13 @@ export function DCADashboard() {
         </div>
 
         <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-            Total Acquired
-          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">USDF Acquired</p>
           <div className="space-y-1">
             {acquiredTokens.length > 0 ? (
-              acquiredTokens.map(token => (
+              acquiredTokens.map((token) => (
                 <p key={token} className="text-2xl font-bold font-mono">
                   {totalAcquiredByToken[token].toFixed(2)}{" "}
-                  <span className={`text-lg ${token === 'FLOW' ? 'text-green-500' : 'text-blue-500'}`}>
+                  <span className={`text-lg ${token === "FLOW" ? "text-[#00EF8B]" : "text-blue-500"}`}>
                     {token}
                   </span>
                 </p>
@@ -542,123 +446,168 @@ export function DCADashboard() {
         </div>
       </div>
 
+      {/* COA Info */}
+      {userCOAAddress && (
+        <div className="bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
+          <p className="text-xs text-gray-500">
+            Your EVM Address (COA): <span className="font-mono">{userCOAAddress}</span>
+          </p>
+        </div>
+      )}
+
       {/* Plans List */}
       <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Your DCA Plans</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h2 className="text-2xl font-bold">Your DCA Plans</h2>
+
+          {/* Filter Tabs */}
+          <div className="flex bg-gray-100 dark:bg-[#0a0a0a] rounded-lg p-1">
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                statusFilter === 'all'
+                  ? 'bg-white dark:bg-[#1a1a1a] shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+              }`}
+            >
+              All ({plans.length})
+            </button>
+            <button
+              onClick={() => setStatusFilter('active')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                statusFilter === 'active'
+                  ? 'bg-white dark:bg-[#1a1a1a] shadow-sm text-[#00EF8B]'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+              }`}
+            >
+              Active ({activePlansCount})
+            </button>
+            <button
+              onClick={() => setStatusFilter('completed')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                statusFilter === 'completed'
+                  ? 'bg-white dark:bg-[#1a1a1a] shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+              }`}
+            >
+              Completed ({completedPlansCount})
+            </button>
+            <button
+              onClick={() => setStatusFilter('paused')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                statusFilter === 'paused'
+                  ? 'bg-white dark:bg-[#1a1a1a] shadow-sm text-yellow-500'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+              }`}
+            >
+              Paused ({pausedPlansCount})
+            </button>
+          </div>
+        </div>
 
         {/* Loading State */}
         {loading && (
           <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-12 text-center">
-            <svg
-              className="animate-spin h-12 w-12 mx-auto mb-4 text-[#00EF8B]"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
+            <svg className="animate-spin h-12 w-12 mx-auto mb-4 text-[#00EF8B]" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            <p className="text-gray-600 dark:text-gray-400">
-              Loading your DCA plans...
-            </p>
+            <p className="text-gray-600 dark:text-gray-400">Loading your DCA plans...</p>
           </div>
         )}
 
         {/* Error State */}
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-xl p-6 text-center">
-            <svg
-              className="w-12 h-12 mx-auto mb-4 text-red-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">
-              Error Loading Plans
-            </h3>
+            <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">Error Loading Plans</h3>
             <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
           </div>
         )}
 
-        {/* Empty State */}
-        {!loading && !error && displayPlans.length === 0 && (
+        {/* No Wallet Connected State */}
+        {!loading && !error && !userCOAAddress && (
+          isMetamask ? (
+            !isEvmConnected && (
+              <div className="bg-white dark:bg-[#1a1a1a] border-2 border-dashed border-orange-300 dark:border-orange-800 rounded-xl p-12 text-center">
+                <h3 className="text-xl font-semibold mb-2">Connect Metamask</h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  Connect your Metamask wallet using the button in the header to view your DCA plans
+                </p>
+              </div>
+            )
+          ) : (
+            userAddress && (
+              <div className="bg-white dark:bg-[#1a1a1a] border-2 border-dashed border-gray-300 dark:border-[#2a2a2a] rounded-xl p-12 text-center">
+                <h3 className="text-xl font-semibold mb-2">No EVM Account Found</h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  Setup your COA (Cadence Owned Account) to start using DCA
+                </p>
+              </div>
+            )
+          )
+        )}
+
+        {/* Empty State - No Plans At All */}
+        {!loading && !error && userCOAAddress && plans.length === 0 && (
           <div className="bg-white dark:bg-[#1a1a1a] border-2 border-dashed border-gray-300 dark:border-[#2a2a2a] rounded-xl p-12 text-center">
-            <svg
-              className="w-16 h-16 mx-auto mb-4 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
+            <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <h3 className="text-xl font-semibold mb-2">No DCA Plans Yet</h3>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Create your first DCA plan to start automating your Flow investments
+              Create your first DCA plan to start automating your investments
             </p>
           </div>
         )}
 
+        {/* Empty State - No Plans Match Filter */}
+        {!loading && !error && userCOAAddress && plans.length > 0 && filteredPlans.length === 0 && (
+          <div className="bg-white dark:bg-[#1a1a1a] border-2 border-dashed border-gray-300 dark:border-[#2a2a2a] rounded-xl p-12 text-center">
+            <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <h3 className="text-xl font-semibold mb-2">No {statusFilter} Plans</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              You don&apos;t have any {statusFilter} plans right now
+            </p>
+            <button
+              onClick={() => setStatusFilter('all')}
+              className="text-[#00EF8B] hover:underline font-medium"
+            >
+              View all plans
+            </button>
+          </div>
+        )}
+
         {/* Plans List */}
-        {!loading && !error && displayPlans.length > 0 && (
+        {!loading && !error && filteredPlans.length > 0 && (
           <div className="space-y-4">
-            {displayPlans.map((plan) => {
+            {filteredPlans.map((plan) => {
               const progress = getProgressPercentage(plan);
 
               return (
                 <div
-                  key={`${plan.id}-${plan.createdAt}`}
+                  key={plan.id}
                   className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6 hover:border-[#00EF8B] transition-all"
                 >
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-4">
                       <div className="bg-gradient-to-br from-[#00EF8B]/20 to-[#7FFFC4]/20 p-3 rounded-xl">
-                        <svg
-                          className="w-8 h-8 text-[#00EF8B]"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                          />
+                        <svg className="w-8 h-8 text-[#00EF8B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                         </svg>
                       </div>
                       <div>
                         <h3 className="text-xl font-bold">Plan #{plan.id}</h3>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {plan.amount} {plan.sourceToken} · {plan.frequency}
+                          {plan.amount} {plan.sourceToken} / {plan.frequency}
                         </p>
                         <div className="flex items-center gap-1 text-xs mt-1">
-                          <span className={plan.sourceToken === 'FLOW' ? 'text-green-500 font-medium' : 'text-blue-500 font-medium'}>
+                          <span className={plan.sourceToken === "FLOW" ? "text-[#00EF8B] font-medium" : "text-blue-500 font-medium"}>
                             {plan.sourceToken}
                           </span>
                           <span className="text-gray-400">→</span>
-                          <span className={plan.targetToken === 'FLOW' ? 'text-green-500 font-medium' : 'text-blue-500 font-medium'}>
+                          <span className={plan.targetToken === "FLOW" ? "text-[#00EF8B] font-medium" : "text-blue-500 font-medium"}>
                             {plan.targetToken}
                           </span>
                         </div>
@@ -666,25 +615,13 @@ export function DCADashboard() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                          plan.status
-                        )}`}
-                      >
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(plan.status)}`}>
                         {plan.status.toUpperCase()}
                       </span>
-                      {plan.status === "active" && !plan.isScheduled && (
-                        <button
-                          onClick={() => handleSchedulePlan(plan.id, plan.intervalSeconds, plan.maxExecutions)}
-                          className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-lg text-sm font-medium transition-colors cursor-pointer"
-                        >
-                          Schedule
-                        </button>
-                      )}
-                      {plan.status === "active" && plan.isScheduled && (
+                      {plan.status === "active" && (
                         <button
                           onClick={() => handlePausePlan(plan.id)}
-                          className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+                          className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 text-yellow-800 dark:text-yellow-200 rounded-lg text-sm font-medium cursor-pointer"
                         >
                           Pause
                         </button>
@@ -692,15 +629,10 @@ export function DCADashboard() {
                       {plan.status === "paused" && (
                         <button
                           onClick={() => handleResumePlan(plan.id)}
-                          className="px-4 py-2 bg-[#00EF8B] hover:bg-[#00D9FF] text-black rounded-lg text-sm font-medium transition-colors cursor-pointer"
+                          className="px-4 py-2 bg-[#00EF8B] hover:bg-[#00D9FF] text-black rounded-lg text-sm font-medium cursor-pointer"
                         >
                           Resume
                         </button>
-                      )}
-                      {plan.status === "completed" && (
-                        <span className="px-4 py-2 text-sm text-gray-500">
-                          Completed
-                        </span>
                       )}
                     </div>
                   </div>
@@ -709,13 +641,8 @@ export function DCADashboard() {
                   {progress !== null && (
                     <div className="mb-4">
                       <div className="flex justify-between text-sm mb-2">
-                        <span className="text-gray-600 dark:text-gray-400">
-                          Progress
-                        </span>
-                        <span className="font-medium">
-                          {plan.executionCount} / {plan.maxExecutions}{" "}
-                          executions
-                        </span>
+                        <span className="text-gray-600 dark:text-gray-400">Progress</span>
+                        <span className="font-medium">{plan.executionCount} / {plan.maxExecutions} executions</span>
                       </div>
                       <div className="h-2 bg-gray-200 dark:bg-[#2a2a2a] rounded-full overflow-hidden">
                         <div
@@ -729,53 +656,27 @@ export function DCADashboard() {
                   {/* Stats Grid */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-gray-200 dark:border-[#2a2a2a]">
                     <div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                        Total Invested
-                      </p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total Invested</p>
                       <p className="text-lg font-bold font-mono">
-                        {plan.totalInvested}
-                        <span className={`text-sm ml-1 ${plan.sourceToken === 'FLOW' ? 'text-green-500' : 'text-blue-500'}`}>
+                        {parseFloat(plan.totalInvested).toFixed(2)}
+                        <span className={`text-sm ml-1 ${plan.sourceToken === "FLOW" ? "text-[#00EF8B]" : "text-blue-500"}`}>
                           {plan.sourceToken}
                         </span>
                       </p>
-                      {priceData && parseFloat(plan.totalInvested) > 0 && plan.sourceToken === 'FLOW' && (
-                        <p className="text-xs text-gray-500">
-                          ≈ ${(parseFloat(plan.totalInvested) * priceData.usdt).toFixed(2)}
-                        </p>
-                      )}
-                      {parseFloat(plan.totalInvested) > 0 && plan.sourceToken === 'USDC' && (
-                        <p className="text-xs text-gray-500">
-                          ≈ ${parseFloat(plan.totalInvested).toFixed(2)} USD
-                        </p>
-                      )}
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                        Total Acquired
-                      </p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total Acquired</p>
                       <p className="text-lg font-bold font-mono">
-                        {plan.totalAcquired}
-                        <span className={`text-sm ml-1 ${plan.targetToken === 'FLOW' ? 'text-green-500' : 'text-blue-500'}`}>
+                        {parseFloat(plan.totalAcquired).toFixed(2)}
+                        <span className={`text-sm ml-1 ${plan.targetToken === "FLOW" ? "text-[#00EF8B]" : "text-blue-500"}`}>
                           {plan.targetToken}
                         </span>
                       </p>
-                      {priceData && parseFloat(plan.totalAcquired) > 0 && plan.targetToken === 'FLOW' && (
-                        <p className="text-xs text-gray-500">
-                          ≈ ${(parseFloat(plan.totalAcquired) * priceData.usdt).toFixed(2)}
-                        </p>
-                      )}
-                      {parseFloat(plan.totalAcquired) > 0 && plan.targetToken === 'USDC' && (
-                        <p className="text-xs text-gray-500">
-                          ≈ ${parseFloat(plan.totalAcquired).toFixed(2)} USD
-                        </p>
-                      )}
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                        Avg Price
-                      </p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Avg Price</p>
                       <p className="text-lg font-bold font-mono">
                         {plan.avgPrice}
                         <span className="text-sm text-gray-500 ml-1">
@@ -785,15 +686,13 @@ export function DCADashboard() {
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                        Next Execution
-                      </p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Next Execution</p>
                       <CountdownTimer
                         targetTimestamp={plan.nextExecution}
                         planStatus={plan.status}
                         onCountdownComplete={() => {
-                          if (userAddress) {
-                            fetchPlans(userAddress);
+                          if (userCOAAddress) {
+                            fetchPlans(userCOAAddress);
                           }
                         }}
                       />
