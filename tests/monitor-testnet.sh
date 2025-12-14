@@ -12,7 +12,11 @@ if [ -f .env ]; then
     set +a
 fi
 
-export PRIVATE_KEY_TESTNET=${PRIVATE_KEY_TESTNET:-${PRIVATE_KEY_TESTNET}}
+# Ensure keys are available (must be set in .env or environment)
+if [ -z "$PRIVATE_KEY_TESTNET" ]; then
+    echo "ERROR: PRIVATE_KEY_TESTNET not set. Add it to .env file."
+    exit 1
+fi
 export PRIVATE_KEY_MAINNET=${PRIVATE_KEY_MAINNET:-$PRIVATE_KEY_TESTNET}
 
 NETWORK="testnet"
