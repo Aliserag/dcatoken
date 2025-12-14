@@ -383,78 +383,12 @@ export function DCADashboard() {
     ? plans
     : plans.filter(p => p.status === statusFilter);
 
-  // Calculate totals (always show totals from all plans, regardless of filter)
-  const totalInvestedByToken: Record<string, number> = {};
-  const totalAcquiredByToken: Record<string, number> = {};
-
-  plans.forEach((plan) => {
-    const invested = parseFloat(plan.totalInvested) || 0;
-    const acquired = parseFloat(plan.totalAcquired) || 0;
-    totalInvestedByToken[plan.sourceToken] = (totalInvestedByToken[plan.sourceToken] || 0) + invested;
-    totalAcquiredByToken[plan.targetToken] = (totalAcquiredByToken[plan.targetToken] || 0) + acquired;
-  });
-
   const activePlansCount = plans.filter((p) => p.status === "active").length;
   const completedPlansCount = plans.filter((p) => p.status === "completed").length;
   const pausedPlansCount = plans.filter((p) => p.status === "paused").length;
-  const investedTokens = Object.keys(totalInvestedByToken);
-  const acquiredTokens = Object.keys(totalAcquiredByToken);
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6">
-      {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Active Plans</p>
-          <p className="text-3xl font-bold">{activePlansCount}</p>
-        </div>
-
-        <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">FLOW Invested</p>
-          <div className="space-y-1">
-            {investedTokens.length > 0 ? (
-              investedTokens.map((token) => (
-                <p key={token} className="text-2xl font-bold font-mono">
-                  {totalInvestedByToken[token].toFixed(2)}{" "}
-                  <span className={`text-lg ${token === "FLOW" ? "text-[#00EF8B]" : "text-blue-500"}`}>
-                    {token}
-                  </span>
-                </p>
-              ))
-            ) : (
-              <p className="text-2xl font-bold font-mono text-gray-400">0.00</p>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">USDF Acquired</p>
-          <div className="space-y-1">
-            {acquiredTokens.length > 0 ? (
-              acquiredTokens.map((token) => (
-                <p key={token} className="text-2xl font-bold font-mono">
-                  {totalAcquiredByToken[token].toFixed(2)}{" "}
-                  <span className={`text-lg ${token === "FLOW" ? "text-[#00EF8B]" : "text-blue-500"}`}>
-                    {token}
-                  </span>
-                </p>
-              ))
-            ) : (
-              <p className="text-2xl font-bold font-mono text-gray-400">0.00</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* COA Info */}
-      {userCOAAddress && (
-        <div className="bg-gray-50 dark:bg-[#0a0a0a] rounded-xl p-4">
-          <p className="text-xs text-gray-500">
-            Your EVM Address (COA): <span className="font-mono">{userCOAAddress}</span>
-          </p>
-        </div>
-      )}
-
       {/* Plans List */}
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

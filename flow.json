@@ -1,8 +1,7 @@
 {
 	"contracts": {
 		"DCAServiceEVM": "cadence/contracts/DCAServiceEVM.cdc",
-		"DCAHandlerEVMV4": "cadence/contracts/DCAHandlerEVMV4.cdc",
-		"DCATestHandler": "cadence/contracts/DCATestHandler.cdc"
+		"DCAHandlerEVMV4": "cadence/contracts/DCAHandlerEVMV4.cdc"
 	},
 	"dependencies": {
 		"Burner": {
@@ -164,8 +163,7 @@
 		"mainnet": {
 			"mainnet-deployer": [
 				"DCAServiceEVM",
-				"DCAHandlerEVMV4",
-				"DCATestHandler"
+				"DCAHandlerEVMV4"
 			]
 		}
 	}
