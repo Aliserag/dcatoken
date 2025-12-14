@@ -75,6 +75,9 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
   const [checkingCOA, setCheckingCOA] = useState(false);
   const [hasApproval, setHasApproval] = useState(false);
   const [checkingApproval, setCheckingApproval] = useState(false);
+  // Track if user has funded their COA for the current plan configuration
+  // This resets when amount/executions change to ensure fresh funding for each plan
+  const [hasFundedForCurrentPlan, setHasFundedForCurrentPlan] = useState(false);
 
   // Balance state
   const [flowBalance, setFlowBalance] = useState("0.00");
@@ -203,6 +206,12 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
     }
   }, [userCOAAddress, sourceToken.address]);
 
+  // Reset funding state when plan parameters change (for Flow wallet FLOW token)
+  // This ensures user must fund for each new plan configuration
+  useEffect(() => {
+    setHasFundedForCurrentPlan(false);
+  }, [amountPerInterval, maxExecutions, sourceToken.address]);
+
   const checkCOA = async (address: string) => {
     setCheckingCOA(true);
     try {
@@ -307,6 +316,8 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
     );
 
     if (result.success) {
+      // Mark as funded for this plan configuration
+      setHasFundedForCurrentPlan(true);
       // Refresh approval status and balance
       if (userCOAAddress) {
         setTimeout(() => checkApproval(userCOAAddress, sourceToken.address), 2000);
@@ -781,8 +792,9 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
                 ) : "Setup COA"}
               </button>
             </div>
-          ) : !hasApproval ? (
+          ) : ((sourceToken.symbol === "FLOW" && !hasFundedForCurrentPlan) || !hasApproval) ? (
             // Step 2: Fund & Approve (combined for FLOW) or just Approve (for USDF)
+            // For FLOW: always need to fund for each new plan, even if approval exists
             sourceToken.symbol === "FLOW" ? (
               // FLOW: Combined deposit + wrap + approve in one transaction
               <div className="space-y-3">
