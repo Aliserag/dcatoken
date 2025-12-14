@@ -74,7 +74,7 @@ if command -v jq &> /dev/null; then
        flow.json > flow.json.tmp && mv flow.json.tmp flow.json
 
     # Add mainnet deployment config
-    jq '.deployments.mainnet = {"mainnet-deployer": ["DeFiMath", "DCAPlan", "DCAController", "DCATransactionHandler"]}' \
+    jq '.deployments.mainnet = {"mainnet-deployer": ["DCAServiceEVM", "DCAHandlerEVMV4"]}' \
        flow.json > flow.json.tmp && mv flow.json.tmp flow.json
 
     echo -e "${GREEN}✅ flow.json updated${NC}"
@@ -95,10 +95,8 @@ else
   "deployments": {
     "mainnet": {
       "mainnet-deployer": [
-        "DeFiMath",
-        "DCAPlan",
-        "DCAController",
-        "DCATransactionHandler"
+        "DCAServiceEVM",
+        "DCAHandlerEVMV4"
       ]
     }
   }
@@ -153,7 +151,7 @@ echo ""
 echo "2. After deployment, update src/config/fcl-config.ts with deployed contract addresses"
 echo ""
 echo "3. Test the deployment:"
-echo -e "   ${GREEN}flow transactions send cadence/transactions/setup_controller.cdc --network mainnet --signer mainnet-deployer${NC}"
+echo -e "   ${GREEN}flow scripts execute cadence/scripts/evm/get_coa_address.cdc --network mainnet${NC}"
 echo ""
 echo -e "${YELLOW}⚠️  Remember:${NC}"
 echo "  - Backup your mainnet-deployer.pkey file securely"

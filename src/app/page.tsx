@@ -7,7 +7,7 @@ import { DCADashboard } from "@/components/dca/dashboard";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"create" | "dashboard">(
-    "dashboard"
+    "create"
   );
 
   return (

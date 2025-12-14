@@ -55,7 +55,7 @@ const SERVICE_CONFIG = {
   },
   testnet: {
     address: "0x4a22e2fce83584aa",
-    keyId: 0,
+    keyId: 1,  // Key index 1 (key 0 was revoked)
     privateKeyEnv: "PRIVATE_KEY_TESTNET",
   },
 };

@@ -64,8 +64,31 @@ const DCA_COA_ADDRESSES = {
   emulator: "0x0000000000000000000000000000000000000000",
 };
 
-// Get current network from environment or default to mainnet
-export const NETWORK = (process.env.NEXT_PUBLIC_FLOW_NETWORK || "mainnet") as keyof typeof CONTRACTS;
+// Get current network - checks URL param first (for switching), then env var, then default
+const getNetworkFromContext = (): keyof typeof CONTRACTS => {
+  // Server-side: use env var
+  if (typeof window === "undefined") {
+    return (process.env.NEXT_PUBLIC_FLOW_NETWORK || "mainnet") as keyof typeof CONTRACTS;
+  }
+
+  // Client-side: check URL param for network switch
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlNetwork = urlParams.get("network");
+  if (urlNetwork === "testnet" || urlNetwork === "mainnet" || urlNetwork === "emulator") {
+    return urlNetwork;
+  }
+
+  // Check localStorage for persisted preference
+  const storedNetwork = localStorage.getItem("preferred_network");
+  if (storedNetwork === "testnet" || storedNetwork === "mainnet" || storedNetwork === "emulator") {
+    return storedNetwork;
+  }
+
+  // Fall back to env var
+  return (process.env.NEXT_PUBLIC_FLOW_NETWORK || "mainnet") as keyof typeof CONTRACTS;
+};
+
+export const NETWORK = getNetworkFromContext();
 
 // Export network-aware EVM tokens
 export const EVM_TOKENS = NETWORK === "testnet" ? EVM_TOKENS_TESTNET : EVM_TOKENS_MAINNET;
