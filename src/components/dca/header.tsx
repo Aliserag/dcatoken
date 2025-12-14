@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import * as fcl from "@onflow/fcl";
 import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { useWalletType, WalletSelector } from "@/components/wallet-selector";
+import { useWalletType } from "@/components/wallet-selector";
 
 export function DCAHeader() {
-  const { walletType, isMetamask, isFlow } = useWalletType();
+  const { walletType, setWalletType, isMetamask, isFlow } = useWalletType();
 
   // Flow wallet state
   const [flowAddress, setFlowAddress] = useState<string | null>(null);
@@ -134,11 +134,8 @@ export function DCAHeader() {
             </div>
           </div>
 
-          {/* Wallet Selector + Connection */}
-          <div className="flex items-center gap-4">
-            {/* Wallet Type Selector */}
-            <WalletSelector className="hidden md:flex" />
-
+          {/* Wallet Connection */}
+          <div className="flex items-center gap-3">
             {isConnected ? (
               <>
                 <div className="hidden md:flex items-center gap-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl px-4 py-2">
@@ -148,9 +145,6 @@ export function DCAHeader() {
                   </div>
                   <div className="w-px h-6 bg-gray-200 dark:bg-[#2a2a2a]" />
                   <div className="text-sm">
-                    <span className="text-gray-600 dark:text-gray-400">
-                      Balance:{" "}
-                    </span>
                     <span className="font-bold font-mono">{currentBalance} FLOW</span>
                   </div>
                 </div>
@@ -162,13 +156,28 @@ export function DCAHeader() {
                 </button>
               </>
             ) : (
-              <button
-                onClick={handleConnect}
-                disabled={isConnecting}
-                className={`${isMetamask ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/30' : 'bg-[#00EF8B] hover:bg-[#00D57A] shadow-[#00EF8B]/30'} disabled:bg-gray-400 disabled:cursor-not-allowed text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 active:scale-95 shadow-lg disabled:shadow-none disabled:transform-none cursor-pointer`}
-              >
-                {isConnecting ? "Connecting..." : `Connect ${isMetamask ? 'Metamask' : 'Flow Wallet'}`}
-              </button>
+              <>
+                <button
+                  onClick={() => {
+                    setWalletType("flow");
+                    setTimeout(() => connectFlowWallet(), 100);
+                  }}
+                  disabled={isLoading}
+                  className="bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-400 disabled:cursor-not-allowed text-black font-bold px-5 py-2.5 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#00EF8B]/30 cursor-pointer"
+                >
+                  {isLoading && isFlow ? "Connecting..." : "Flow Wallet"}
+                </button>
+                <button
+                  onClick={() => {
+                    setWalletType("metamask");
+                    setTimeout(() => connectMetamask({ connector: injected() }), 100);
+                  }}
+                  disabled={isMetamaskConnecting}
+                  className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg shadow-orange-500/30 cursor-pointer"
+                >
+                  {isMetamaskConnecting ? "Connecting..." : "Metamask"}
+                </button>
+              </>
             )}
           </div>
         </div>

@@ -471,3 +471,316 @@ Always keep the dual goal in mind:
 1. **Fully working educational apps** that demonstrate Forte features in practice.
 2. **Top-tier documentation** so any new dev can fork/clone and successfully reproduce the demo.
 
+---
+
+## 14. First Working Build (v1.0) - December 2025
+
+This section documents the first fully working end-to-end DCA system deployed on Flow Mainnet.
+
+### 14.1 System Overview
+
+DCA (Dollar-Cost Averaging) service that:
+- Enables automated **WFLOW → USDF** swaps on user-defined schedules
+- Supports both **Metamask (EVM)** and **Flow Wallet** users
+- Uses Flow's **Scheduled Transactions** for autonomous execution
+- Swaps via **UniswapV3** on Flow EVM
+
+### 14.2 Architecture
+
+```
+User's COA (WFLOW)
+    ↓ ERC-20 approve
+DCAServiceEVM Shared COA
+    ↓ transferFrom
+UniswapV3 Router (swap)
+    ↓ transfer
+User's COA (USDF)
+```
+
+**Key insight**: Everything stays in EVM land. No Cadence↔EVM bridging needed.
+
+### 14.3 Key Mainnet Addresses
+
+| Contract | Address |
+|----------|---------|
+| DCAServiceEVM | `0xca7ee55e4fc3251a` |
+| DCAHandlerEVMV4 | `0xca7ee55e4fc3251a` |
+| Shared COA (spender) | `0x000000000000000000000002623833e1789dbd4a` |
+| FlowTransactionScheduler | `0xe467b9dd11fa00df` |
+| UniswapV3 Router | `0xeEDC6Ff75e1b10B903D9013c358e446a73d35341` |
+| WFLOW | `0xd3bF53DAC106A0290B0483EcBC89d40FcC961f3e` |
+| USDF | `0x2aaBea2058b5aC2D339b163C6Ab6f2b6d53aabED` |
+
+### 14.4 User Flows
+
+**Metamask Users:**
+1. Connect Metamask (Flow EVM chain 747)
+2. Approve DCA service to spend WFLOW (exact amount, not unlimited)
+3. Create DCA plan via relay API (backend pays Cadence gas)
+4. Scheduled executions happen automatically
+
+**Flow Wallet Users:**
+1. Connect Flow Wallet
+2. Setup COA (if needed) - creates EVM account
+3. Deposit FLOW → wraps to WFLOW in COA
+4. Approve DCA service to spend WFLOW
+5. Create DCA plan
+6. Scheduled executions happen automatically
+
+### 14.5 Key Files
+
+**Contracts (Cadence 1.0):**
+- `cadence/contracts/DCAServiceEVM.cdc` - Main DCA service with shared COA, plan management
+- `cadence/contracts/DCAHandlerEVMV4.cdc` - Scheduled transaction handler for autonomous execution
+
+**Frontend (Next.js 14 + TypeScript):**
+- `src/components/dca/create-plan.tsx` - Create DCA plan UI with multi-step flow
+- `src/components/dca/dashboard.tsx` - View and manage plans with filtering
+- `src/app/api/relay/route.ts` - Backend API for sponsored transactions
+- `src/config/fcl-config.ts` - Contract addresses & FCL configuration
+- `src/lib/cadence-transactions.ts` - Cadence transaction templates
+
+**Scripts:**
+- `cadence/scripts/evm/get_user_plans.cdc` - Query user's DCA plans
+- `cadence/scripts/evm/get_total_plans.cdc` - Get total plan count
+
+### 14.6 Technical Decisions
+
+1. **EVM-Only Pattern** (no bridging)
+   - Tokens stay in EVM land throughout the swap
+   - Uses `transferFrom`/`transfer` not `depositTokens`/`withdrawTokens`
+   - Simpler architecture, less gas overhead
+   - Works seamlessly for Metamask users
+
+2. **Sponsored Transactions**
+   - Backend service account signs and pays for Cadence transactions
+   - Metamask users never need FLOW for gas
+   - Private key accessible server-side only (`SERVICE_PRIVATE_KEY`)
+
+3. **Safe Approvals**
+   - Approves exact amount needed + 5% buffer
+   - NOT unlimited approval (safer for users)
+   - Users see exact amount in Metamask
+
+4. **Fee Estimation**
+   - ~0.85 FLOW per execution (with `executionEffort: 3500`)
+   - Fee vault funded at scheduling time
+   - Supports up to `maxExecutions` scheduled runs
+
+5. **First Execution Delay**
+   - 120 seconds delay before first execution
+   - Gives scheduler time to process
+   - Subsequent executions follow `intervalSeconds`
+
+### 14.7 Verified Working (Plan #27)
+
+Test executed on mainnet:
+- **Amount**: 0.1 WFLOW per interval
+- **Interval**: 60 seconds (Minutely)
+- **Max Executions**: 2
+- **Result**: Successfully swapped WFLOW → USDF via UniswapV3
+- **Execution Count**: 2/2 completed
+
+### 14.8 Common Commands
+
+```bash
+# Start frontend
+npm run dev
+
+# Query plans for an address
+flow scripts execute cadence/scripts/evm/get_user_plans.cdc \
+  --args-json '[{"type":"String","value":"0xYOUR_EVM_ADDRESS"}]' \
+  --network mainnet
+
+# Check service account balance
+flow accounts get 0xca7ee55e4fc3251a --network mainnet
+```
+
+---
+
+## 15. Frontend Guide
+
+### 15.1 Design System
+
+**Primary Colors:**
+- Flow Green: `#00EF8B` (Primary actions, gradients)
+- Flow Green Light: `#7FFFC4` (Gradient accents)
+
+**Component Patterns:**
+```tsx
+// Primary Button
+<button className="bg-[#00EF8B] hover:shadow-lg hover:shadow-[#00EF8B]/30 text-black font-bold px-6 py-3 rounded-xl">
+
+// Card
+<div className="bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl p-6">
+
+// Input
+<input className="w-full px-4 py-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl focus:border-[#00EF8B]" />
+```
+
+### 15.2 Key Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| DCAHeader | `src/components/dca/header.tsx` | Wallet connection, navigation |
+| CreateDCAPlan | `src/components/dca/create-plan.tsx` | Multi-step plan creation flow |
+| DCADashboard | `src/components/dca/dashboard.tsx` | View/filter/manage plans |
+| WalletSelector | `src/components/wallet-selector.tsx` | Metamask/Flow wallet choice |
+
+### 15.3 Wallet Integration
+
+**Dual Wallet Support:**
+- **Metamask**: Uses wagmi + viem for EVM interactions
+- **Flow Wallet**: Uses FCL for Cadence transactions
+
+```tsx
+// Check wallet type
+const { walletType } = useWalletType(); // 'metamask' | 'flow' | null
+
+// Metamask: Direct EVM approval
+const { writeContract } = useWriteContract();
+writeContract({ address: token, abi: ERC20_ABI, functionName: 'approve', args: [...] });
+
+// Flow Wallet: FCL transaction
+await fcl.mutate({ cadence: APPROVE_TX, args: [...] });
+```
+
+### 15.4 Environment Variables
+
+```env
+# .env.local
+NEXT_PUBLIC_FLOW_NETWORK=mainnet
+SERVICE_PRIVATE_KEY=<your-key>  # Server-side only
+SERVICE_ACCOUNT_ADDRESS=0xca7ee55e4fc3251a
+```
+
+---
+
+## 16. Testing Guide
+
+### 16.1 Emulator Testing (Legacy Cadence DCA)
+
+```bash
+# Terminal 1: Start emulator
+flow emulator start
+
+# Terminal 2: Deploy and test
+flow project deploy --network emulator
+flow transactions send cadence/transactions/setup_controller.cdc --network emulator --signer emulator-account
+```
+
+### 16.2 Mainnet Testing (EVM DCA)
+
+**Test Plan Creation (Metamask):**
+1. Connect Metamask to Flow EVM (chain 747)
+2. Have WFLOW in your wallet
+3. Create plan: 0.1 WFLOW × 2 executions
+4. Monitor via dashboard
+
+**Verify Plan Execution:**
+```bash
+# Query your plans
+flow scripts execute cadence/scripts/evm/get_user_plans.cdc \
+  --args-json '[{"type":"String","value":"0xYOUR_ADDRESS"}]' \
+  --network mainnet
+
+# Check execution count increased
+# Check totalSourceSpent and totalTargetReceived
+```
+
+### 16.3 Plan Status Codes
+
+- `0` - Active (will execute)
+- `1` - Paused (manual pause)
+- `2` - Completed (reached max executions)
+- `3` - Cancelled
+
+---
+
+## 17. Deployment Guide
+
+### 17.1 Current Mainnet Deployment
+
+All contracts deployed to `0xca7ee55e4fc3251a`:
+- DCAServiceEVM
+- DCAHandlerEVMV4
+
+### 17.2 Redeploying (If Needed)
+
+**Note:** Due to Stable Cadence, contracts cannot be removed. Deploy new versions with V5, V6, etc.
+
+```bash
+# 1. Update flow.json with new contract names
+# 2. Deploy
+flow project deploy --network mainnet
+
+# 3. Update frontend config
+# src/config/fcl-config.ts - update contract addresses
+```
+
+### 17.3 Service Account Security
+
+**Private Key Management:**
+- Store in `.env` file (server-side only)
+- Never commit to git
+- Add to `.gitignore`: `*.pkey`, `.env`, `.env.local`
+
+**Service Account Funding:**
+- Keep ~10 FLOW for gas fees
+- Monitor balance: `flow accounts get 0xca7ee55e4fc3251a --network mainnet`
+
+---
+
+## 18. Technical Learnings
+
+### 18.1 EVM-Only vs DeFi Actions Pattern
+
+We chose **EVM-only** because:
+- Tokens stay in EVM throughout (no bridging overhead)
+- Works natively with Metamask users
+- Simpler execution path
+
+**DeFi Actions** would be better for:
+- Pure Cadence token flows
+- Multi-protocol composability
+- Cadence-native tokens
+
+### 18.2 Gotchas & Solutions
+
+**UFix64 Formatting:**
+```typescript
+// Cadence UFix64 requires decimal point
+const formatted = amount.includes('.') ? amount : `${amount}.0`;
+```
+
+**FCL onceSealed() Status:**
+```typescript
+// statusCode might be 0 after sealing - check errorMessage instead
+const result = await fcl.tx(txId).onceSealed();
+if (result.errorMessage) throw new Error(result.errorMessage);
+```
+
+**EVM.call() in Scripts:**
+- Cannot use `EVM.call()` in Cadence scripts (needs COA reference)
+- Use transactions for EVM reads, or track state in Cadence
+
+**Metamask "Malicious Address" Warning:**
+- Flow COA addresses start with `0x000000000...`
+- Metamask flags unusual patterns - this is a false positive
+- Document for users to expect this warning
+
+### 18.3 Fee Estimation
+
+| Operation | Cost | executionEffort |
+|-----------|------|-----------------|
+| Cadence swap (IncrementFi) | ~0.01 FLOW | 400 |
+| EVM swap (UniswapV3) | ~0.7 FLOW | 3500 |
+
+**Pattern:**
+```cadence
+// Use estimate() to get flowFee
+let estimate = FlowTransactionScheduler.estimate(...)
+var feeAmount = (estimate.flowFee ?? 0.01) * 1.05  // 5% buffer
+if feeAmount > 10.0 { feeAmount = 10.0 }           // Cap
+```
+
