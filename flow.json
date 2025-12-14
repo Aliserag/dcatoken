@@ -174,7 +174,7 @@
 			"address": "4a22e2fce83584aa",
 			"key": {
 				"type": "hex",
-				"index": 0,
+				"index": 1,
 				"signatureAlgorithm": "ECDSA_P256",
 				"hashAlgorithm": "SHA3_256",
 				"privateKey": "${PRIVATE_KEY_TESTNET}"
