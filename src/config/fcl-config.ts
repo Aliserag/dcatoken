@@ -21,8 +21,8 @@ export const CONTRACTS = {
     SwapInterfaces: "0xb78ef7afa52ff906",
   },
   testnet: {
-    DCAServiceEVM: "0x4a22e2fce83584aa",
-    DCAHandlerEVMV4: "0x4a22e2fce83584aa",
+    DCAServiceEVM: "0x2376ce69fdac1763",
+    DCAHandlerEVMV4: "0x2376ce69fdac1763",
     FlowToken: "0x7e60df042a9c0868",
     FungibleToken: "0x9a0766d93b6608b7",
     FlowTransactionScheduler: "0x8c5303eaa26202d6",
@@ -60,7 +60,7 @@ const EVM_TOKENS_TESTNET = {
 // DCA Service Shared COA Addresses per network
 const DCA_COA_ADDRESSES = {
   mainnet: "0x000000000000000000000002623833e1789dbd4a",
-  testnet: "0x000000000000000000000002c058dc16c13e4e2f",
+  testnet: "0x0000000000000000000000023ad3ade63b63f12b",
   emulator: "0x0000000000000000000000000000000000000000",
 };
 

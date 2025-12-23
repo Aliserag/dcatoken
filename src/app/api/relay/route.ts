@@ -30,8 +30,8 @@ const CONTRACTS_BY_NETWORK = {
     EVM: "0xe467b9dd11fa00df",
   },
   testnet: {
-    DCAServiceEVM: "0x4a22e2fce83584aa",
-    DCAHandlerEVMV4: "0x4a22e2fce83584aa",
+    DCAServiceEVM: "0x2376ce69fdac1763",
+    DCAHandlerEVMV4: "0x2376ce69fdac1763",
     FlowToken: "0x7e60df042a9c0868",
     FungibleToken: "0x9a0766d93b6608b7",
     FlowTransactionScheduler: "0x8c5303eaa26202d6",
@@ -45,12 +45,12 @@ const SERVICE_CONFIG = {
   mainnet: {
     address: "0xca7ee55e4fc3251a",
     keyId: 1,
-    privateKeyEnv: "PRIVATE_KEY_MAINNET",
+    privateKeyEnv: "PRIVATE_KEY_MAINNET_CADENCE",
   },
   testnet: {
-    address: "0x4a22e2fce83584aa",
-    keyId: 1, // Key index 1 (key 0 was revoked)
-    privateKeyEnv: "PRIVATE_KEY_TESTNET",
+    address: "0x2376ce69fdac1763",
+    keyId: 0,
+    privateKeyEnv: "PRIVATE_KEY_TESTNET_CADENCE",
   },
 };
 
