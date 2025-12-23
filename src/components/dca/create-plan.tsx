@@ -94,10 +94,27 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
   const [planCreationSuccess, setPlanCreationSuccess] = useState(false);
 
   // Metamask ERC-20 approval (wagmi)
-  const { writeContract: approveERC20, data: approveHash, isPending: isApproving } = useWriteContract();
-  const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
+  const { writeContract: approveERC20, data: approveHash, isPending: isApproving, error: approveError } = useWriteContract();
+  const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess, error: receiptError } = useWaitForTransactionReceipt({
     hash: approveHash,
+    // Flow EVM needs explicit polling since websocket subscriptions may not work
+    pollingInterval: 2000,
+    // Timeout after 60 seconds
+    timeout: 60_000,
   });
+
+  // Log approval errors for debugging
+  useEffect(() => {
+    if (approveError) {
+      console.error("Approve write error:", approveError);
+    }
+    if (receiptError) {
+      console.error("Receipt wait error:", receiptError);
+    }
+    if (approveHash) {
+      console.log("Approval tx hash:", approveHash);
+    }
+  }, [approveError, receiptError, approveHash]);
 
   // Check Metamask allowance
   const { data: metamaskAllowance, refetch: refetchAllowance } = useReadContract({
@@ -701,6 +718,18 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
               {isApproveSuccess && (
                 <div className="text-center text-sm text-green-600">
                   Approval successful! Refreshing...
+                </div>
+              )}
+
+              {(approveError || receiptError) && (
+                <div className="text-center text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
+                  Error: {approveError?.message || receiptError?.message || "Transaction failed"}
+                </div>
+              )}
+
+              {approveHash && !isApproveSuccess && !isApproveConfirming && (
+                <div className="text-center text-xs text-gray-500">
+                  TX: <a href={`https://evm.flowscan.io/tx/${approveHash}`} target="_blank" rel="noopener noreferrer" className="underline">{approveHash.slice(0, 20)}...</a>
                 </div>
               )}
             </div>

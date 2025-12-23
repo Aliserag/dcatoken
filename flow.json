@@ -167,17 +167,27 @@
 			"key": {
 				"type": "hex",
 				"index": 1,
-				"privateKey": "${PRIVATE_KEY_MAINNET}"
+				"privateKey": "${PRIVATE_KEY_MAINNET_CADENCE}"
 			}
 		},
 		"testnet-deployer": {
+			"address": "2376ce69fdac1763",
+			"key": {
+				"type": "hex",
+				"index": 0,
+				"signatureAlgorithm": "ECDSA_secp256k1",
+				"hashAlgorithm": "SHA2_256",
+				"privateKey": "${PRIVATE_KEY_TESTNET_CADENCE}"
+			}
+		},
+		"testnet-contracts": {
 			"address": "4a22e2fce83584aa",
 			"key": {
 				"type": "hex",
 				"index": 1,
 				"signatureAlgorithm": "ECDSA_P256",
 				"hashAlgorithm": "SHA3_256",
-				"privateKey": "${PRIVATE_KEY_TESTNET}"
+				"privateKey": "0000000000000000000000000000000000000000000000000000000000000001"
 			}
 		}
 	},
