@@ -14,9 +14,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as fcl from "@onflow/fcl";
 import { SHA3 } from "sha3";
+import { createHash } from "crypto";
 import { ec as EC } from "elliptic";
 
-const curve = new EC("p256");
+// Curves for different networks
+const p256Curve = new EC("p256");
+const secp256k1Curve = new EC("secp256k1");
 
 // Network-specific contract addresses
 const CONTRACTS_BY_NETWORK = {
@@ -41,16 +44,21 @@ const CONTRACTS_BY_NETWORK = {
 };
 
 // Network-specific service account configuration
+// Testnet uses secp256k1 + SHA2-256, Mainnet uses P256 + SHA3-256
 const SERVICE_CONFIG = {
   mainnet: {
     address: "0xca7ee55e4fc3251a",
     keyId: 1,
     privateKeyEnv: "PRIVATE_KEY_MAINNET_CADENCE",
+    signatureAlgorithm: "ECDSA_P256",
+    hashAlgorithm: "SHA3_256",
   },
   testnet: {
     address: "0x2376ce69fdac1763",
     keyId: 0,
     privateKeyEnv: "PRIVATE_KEY_TESTNET_CADENCE",
+    signatureAlgorithm: "ECDSA_secp256k1",
+    hashAlgorithm: "SHA2_256",
   },
 };
 
@@ -62,6 +70,8 @@ interface NetworkConfig {
   serviceAddress: string;
   serviceKeyId: number;
   privateKey: string | undefined;
+  signatureAlgorithm: string;
+  hashAlgorithm: string;
 }
 
 // Get network configuration from request
@@ -78,20 +88,40 @@ const getNetworkConfig = (network: string): NetworkConfig => {
     serviceAddress: serviceConfig.address,
     serviceKeyId: serviceConfig.keyId,
     privateKey,
+    signatureAlgorithm: serviceConfig.signatureAlgorithm,
+    hashAlgorithm: serviceConfig.hashAlgorithm,
   };
 };
 
-// Hash message for signing (SHA3-256)
-const hashMessageHex = (msgHex: string): Buffer => {
+// Hash message for signing with SHA3-256 (for P256/mainnet)
+const hashMessageSHA3 = (msgHex: string): Buffer => {
   const sha = new SHA3(256);
   sha.update(Buffer.from(msgHex, "hex"));
   return sha.digest();
 };
 
-// Sign with private key using elliptic curve
-const signWithKey = (privateKey: string, msgHex: string): string => {
+// Hash message for signing with SHA2-256 (for secp256k1/testnet)
+const hashMessageSHA2 = (msgHex: string): Buffer => {
+  return createHash("sha256").update(Buffer.from(msgHex, "hex")).digest();
+};
+
+// Sign with private key using the correct curve and hash for the network
+const signWithKey = (
+  privateKey: string,
+  msgHex: string,
+  signatureAlgorithm: string,
+  hashAlgorithm: string
+): string => {
+  // Select the correct curve
+  const curve = signatureAlgorithm === "ECDSA_secp256k1" ? secp256k1Curve : p256Curve;
+
+  // Select the correct hash function
+  const hash = hashAlgorithm === "SHA2_256"
+    ? hashMessageSHA2(msgHex)
+    : hashMessageSHA3(msgHex);
+
   const key = curve.keyFromPrivate(Buffer.from(privateKey, "hex"));
-  const sig = key.sign(hashMessageHex(msgHex));
+  const sig = key.sign(hash);
   const n = 32;
   const r = sig.r.toArrayLike(Buffer, "be", n);
   const s = sig.s.toArrayLike(Buffer, "be", n);
@@ -109,7 +139,12 @@ const createServiceSigner = (config: NetworkConfig) => {
       signingFunction: async (signable: any) => ({
         addr: fcl.withPrefix(config.serviceAddress),
         keyId: config.serviceKeyId,
-        signature: signWithKey(config.privateKey!, signable.message),
+        signature: signWithKey(
+          config.privateKey!,
+          signable.message,
+          config.signatureAlgorithm,
+          config.hashAlgorithm
+        ),
       }),
     };
   };
@@ -158,12 +193,26 @@ transaction(
 }
 `;
 
+// Network-specific FlowFees and FlowStorageFees addresses
+const FEE_CONTRACTS = {
+  mainnet: {
+    FlowFees: "0xf919ee77447b7497",
+    FlowStorageFees: "0xe467b9dd11fa00df",
+  },
+  testnet: {
+    FlowFees: "0x912d5440f7e3769e",
+    FlowStorageFees: "0x8c5303eaa26202d6",
+  },
+};
+
 // Generate Cadence transaction to schedule a DCA plan
-const getSchedulePlanTx = (contracts: NetworkConfig["contracts"]) => `
+const getSchedulePlanTx = (contracts: NetworkConfig["contracts"], feeContracts: typeof FEE_CONTRACTS.mainnet) => `
 import FlowTransactionScheduler from ${contracts.FlowTransactionScheduler}
 import FlowTransactionSchedulerUtils from ${contracts.FlowTransactionSchedulerUtils}
 import FlowToken from ${contracts.FlowToken}
 import FungibleToken from ${contracts.FungibleToken}
+import FlowFees from ${feeContracts.FlowFees}
+import FlowStorageFees from ${feeContracts.FlowStorageFees}
 import DCAHandlerEVMV4 from ${contracts.DCAHandlerEVMV4}
 import DCAServiceEVM from ${contracts.DCAServiceEVM}
 
@@ -257,11 +306,12 @@ transaction(planId: UInt64, totalFeeAmount: UFix64) {
 
     execute {
         // executionEffort based on swap type:
-        // - Cadence-only swaps (IncrementFi): 400
-        // - EVM swaps (UniswapV3): 5000 (includes bridging + UniswapV3 overhead)
+        // - Cadence-only swaps (IncrementFi): 400-500
+        // - EVM swaps (UniswapV3): 2000 (reduced from 5000 based on flow-dca repo findings)
         // DCAServiceEVM always uses EVM swaps
-        let executionEffort: UInt64 = 5000
-        let priority = FlowTransactionScheduler.Priority.Medium
+        let executionEffort: UInt64 = 2000
+        // Use Low priority for cheaper fees (proven to work by flow-dca repo)
+        let priority = FlowTransactionScheduler.Priority.Low
 
         let loopConfig = DCAHandlerEVMV4.createLoopConfig(
             schedulerManagerCap: self.managerCap,
@@ -275,15 +325,26 @@ transaction(planId: UInt64, totalFeeAmount: UFix64) {
             loopConfig: loopConfig
         )
 
-        let feeEstimate = FlowTransactionScheduler.estimate(
-            data: txData as AnyStruct,
-            timestamp: self.firstExecutionTime,
-            priority: priority,
-            executionEffort: executionEffort
+        // Calculate fees manually (more reliable for Low priority than estimate())
+        // This pattern is from flow-dca repo which successfully uses Low priority
+        let baseFee = FlowFees.computeFees(
+            inclusionEffort: 1.0,
+            executionEffort: UFix64(executionEffort) / 100000000.0
         )
 
-        // Use estimated fee with 5% buffer, cap at 10.0 FLOW
-        var feeAmount = (feeEstimate.flowFee ?? 0.01) * 1.05
+        // Scale by priority multiplier from scheduler config
+        let priorityMultipliers = FlowTransactionScheduler.getConfig().priorityFeeMultipliers
+        let scaledExecutionFee = baseFee * priorityMultipliers[priority]!
+
+        // Estimate storage fee (data is small, ~1KB)
+        let dataSizeMB = 0.001
+        let storageFee = FlowStorageFees.storageCapacityToFlow(dataSizeMB)
+
+        // Total fee with inclusion fee
+        let feeEstimateCalc = scaledExecutionFee + storageFee + 0.00001
+
+        // Apply 5% buffer, cap at 10.0 FLOW
+        var feeAmount = feeEstimateCalc * 1.05
         if feeAmount > 10.0 {
             feeAmount = 10.0
         }
@@ -419,13 +480,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Calculate total fee needed for all executions
-      // Based on mainnet analysis with executionEffort: 5000
-      // - Actual fee estimate: ~1.0 FLOW per execution
-      // - Handler adds 10% buffer when rescheduling: ~1.1 FLOW
-      // - Initial schedule also takes ~1.05 FLOW
-      // Using 1.25 FLOW per execution to ensure sufficient funds for rescheduling
+      // With Low priority and executionEffort: 2000 (based on flow-dca repo findings):
+      // - Fee is significantly lower than Medium priority
+      // - Estimated ~0.05-0.1 FLOW per execution
+      // - Using 0.15 FLOW per execution as safety buffer
       const maxExecutions = params.maxExecutions || 10;
-      const feePerExecution = 1.25; // ~1.1 FLOW actual + 15% safety buffer
+      const feePerExecution = 0.15; // Low priority fee with buffer
       const totalFeeAmount = (feePerExecution * maxExecutions).toFixed(8);
 
       console.log("Scheduling plan with fees:", {
@@ -435,8 +495,11 @@ export async function POST(request: NextRequest) {
         network: config.network,
       });
 
+      // Get fee contract addresses for the network
+      const feeContracts = FEE_CONTRACTS[config.network];
+
       const txId = await fcl.mutate({
-        cadence: getSchedulePlanTx(config.contracts),
+        cadence: getSchedulePlanTx(config.contracts, feeContracts),
         args: (arg: any, t: any) => [
           arg(params.planId.toString(), t.UInt64),
           arg(totalFeeAmount, t.UFix64),

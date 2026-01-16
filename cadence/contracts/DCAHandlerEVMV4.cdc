@@ -2,6 +2,8 @@ import FlowTransactionScheduler from "FlowTransactionScheduler"
 import FlowTransactionSchedulerUtils from "FlowTransactionSchedulerUtils"
 import FlowToken from "FlowToken"
 import FungibleToken from "FungibleToken"
+import FlowFees from "FlowFees"
+import FlowStorageFees from "FlowStorageFees"
 import DCAServiceEVM from "DCAServiceEVM"
 
 /// DCAHandlerEVMV4: Autonomous Scheduled Transaction Handler for EVM-Native DCA
@@ -156,16 +158,29 @@ access(all) contract DCAHandlerEVMV4 {
             // Prepare next transaction data (pass same loopConfig for chaining)
             let nextTxData = TransactionData(planId: planId, loopConfig: loopConfig)
 
-            // Estimate fees
-            let estimate = FlowTransactionScheduler.estimate(
-                data: nextTxData,
-                timestamp: nextExecutionTime!,
-                priority: loopConfig.priority,
-                executionEffort: loopConfig.executionEffort
+            // Calculate fees manually (more reliable for Low priority than estimate())
+            // This pattern is from flow-dca repo which successfully uses Low priority
+            let baseFee = FlowFees.computeFees(
+                inclusionEffort: 1.0,
+                executionEffort: UFix64(loopConfig.executionEffort) / 100000000.0
             )
 
-            let feeAmount = estimate.flowFee ?? 0.001
-            let feeWithBuffer = feeAmount * 1.1
+            // Scale by priority multiplier from scheduler config
+            let priorityMultipliers = FlowTransactionScheduler.getConfig().priorityFeeMultipliers
+            let scaledExecutionFee = baseFee * priorityMultipliers[loopConfig.priority]!
+
+            // Estimate storage fee (data is small, ~1KB)
+            let dataSizeMB = 0.001
+            let storageFee = FlowStorageFees.storageCapacityToFlow(dataSizeMB)
+
+            // Total fee with inclusion fee
+            let feeEstimate = scaledExecutionFee + storageFee + 0.00001
+
+            // Apply 5% buffer, cap at 10.0 FLOW
+            var feeWithBuffer = feeEstimate * 1.05
+            if feeWithBuffer > 10.0 {
+                feeWithBuffer = 10.0
+            }
 
             // Borrow fee vault from capability
             let feeVault = loopConfig.feeProviderCap.borrow()

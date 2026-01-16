@@ -2,22 +2,19 @@ import FlowTransactionScheduler from "FlowTransactionScheduler"
 import FlowTransactionSchedulerUtils from "FlowTransactionSchedulerUtils"
 import FlowToken from "FlowToken"
 import FungibleToken from "FungibleToken"
-import FlowFees from "FlowFees"
-import FlowStorageFees from "FlowStorageFees"
 import DCAHandlerEVMV4 from "DCAHandlerEVMV4"
 import DCAServiceEVM from "DCAServiceEVM"
 
-/// Schedule a DCA plan for autonomous execution using V4 handler
+/// Schedule a DCA plan with CONFIGURABLE executionEffort for testing
 ///
-/// This follows the official scaffold pattern:
-/// - Uses getControllers() to retrieve EXISTING capabilities
-/// - Uses Manager.schedule() instead of FlowTransactionScheduler.schedule() directly
-/// - Passes capabilities in TransactionData (LoopConfig pattern)
+/// This is a test version that accepts executionEffort as a parameter
+/// to find the minimum required for EVM swaps.
 ///
 /// Parameters:
 /// - planId: The DCA plan ID to schedule
+/// - executionEffort: The compute effort to allocate (e.g., 500, 1000, 2000, 5000)
 ///
-transaction(planId: UInt64) {
+transaction(planId: UInt64, executionEffort: UInt64) {
 
     let flowVault: auth(FungibleToken.Withdraw) &FlowToken.Vault
     let handlerCap: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>
@@ -41,18 +38,15 @@ transaction(planId: UInt64) {
         self.firstExecutionTime = plan.nextExecutionTime!
 
         // === Use getControllers() to retrieve EXISTING capabilities ===
-        // This is the KEY pattern from the scaffold
 
         // 1. Get Handler capability (entitled)
         var foundHandlerCap: Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}>? = nil
         let handlerControllers = signer.capabilities.storage.getControllers(forPath: DCAHandlerEVMV4.HandlerStoragePath)
-        log("Found ".concat(handlerControllers.length.toString()).concat(" handler capability controllers"))
 
         for controller in handlerControllers {
             if let cap = controller.capability as? Capability<auth(FlowTransactionScheduler.Execute) &{FlowTransactionScheduler.TransactionHandler}> {
                 if cap.check() {
                     foundHandlerCap = cap
-                    log("Found valid entitled handler capability ID: ".concat(cap.id.toString()))
                     break
                 }
             }
@@ -63,13 +57,11 @@ transaction(planId: UInt64) {
         // 2. Get Manager capability
         var foundManagerCap: Capability<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}>? = nil
         let managerControllers = signer.capabilities.storage.getControllers(forPath: FlowTransactionSchedulerUtils.managerStoragePath)
-        log("Found ".concat(managerControllers.length.toString()).concat(" manager capability controllers"))
 
         for controller in managerControllers {
             if let cap = controller.capability as? Capability<auth(FlowTransactionSchedulerUtils.Owner) &{FlowTransactionSchedulerUtils.Manager}> {
                 if cap.check() {
                     foundManagerCap = cap
-                    log("Found valid manager capability ID: ".concat(cap.id.toString()))
                     break
                 }
             }
@@ -80,13 +72,11 @@ transaction(planId: UInt64) {
         // 3. Get Fee Vault capability
         var foundFeeVaultCap: Capability<auth(FungibleToken.Withdraw) &FlowToken.Vault>? = nil
         let feeVaultControllers = signer.capabilities.storage.getControllers(forPath: /storage/DCAHandlerEVMV4FeeVault)
-        log("Found ".concat(feeVaultControllers.length.toString()).concat(" fee vault capability controllers"))
 
         for controller in feeVaultControllers {
             if let cap = controller.capability as? Capability<auth(FungibleToken.Withdraw) &FlowToken.Vault> {
                 if cap.check() {
                     foundFeeVaultCap = cap
-                    log("Found valid fee vault capability ID: ".concat(cap.id.toString()))
                     break
                 }
             }
@@ -96,19 +86,14 @@ transaction(planId: UInt64) {
     }
 
     execute {
-        // Execution effort for EVM transactions
-        // Reduced from 5000 to 2000 based on flow-dca repo findings
-        // EVM swaps with bridging need ~2000, Cadence-only would need ~400-500
-        let executionEffort: UInt64 = 2000
-        // Use Low priority for cheaper fees (proven to work by flow-dca repo)
-        let priority = FlowTransactionScheduler.Priority.Low
+        let priority = FlowTransactionScheduler.Priority.Medium
 
-        // Create LoopConfig with retrieved capabilities
+        // Create LoopConfig with CONFIGURABLE executionEffort
         let loopConfig = DCAHandlerEVMV4.createLoopConfig(
             schedulerManagerCap: self.managerCap,
             feeProviderCap: self.feeProviderCap,
             priority: priority,
-            executionEffort: executionEffort
+            executionEffort: executionEffort  // <-- CONFIGURABLE
         )
 
         // Create transaction data with LoopConfig
@@ -117,42 +102,30 @@ transaction(planId: UInt64) {
             loopConfig: loopConfig
         )
 
-        // Calculate fees manually (more reliable for Low priority than estimate())
-        // This pattern is from flow-dca repo which successfully uses Low priority
-        let baseFee = FlowFees.computeFees(
-            inclusionEffort: 1.0,
-            executionEffort: UFix64(executionEffort) / 100000000.0
+        // Estimate fees
+        let feeEstimate = FlowTransactionScheduler.estimate(
+            data: txData as AnyStruct,
+            timestamp: self.firstExecutionTime,
+            priority: priority,
+            executionEffort: executionEffort
         )
 
-        // Scale by priority multiplier from scheduler config
-        let priorityMultipliers = FlowTransactionScheduler.getConfig().priorityFeeMultipliers
-        let scaledExecutionFee = baseFee * priorityMultipliers[priority]!
-
-        // Estimate storage fee (data is small, ~1KB)
-        let dataSizeMB = 0.001
-        let storageFee = FlowStorageFees.storageCapacityToFlow(dataSizeMB)
-
-        // Total fee with inclusion fee
-        let feeEstimate = scaledExecutionFee + storageFee + 0.00001
-
-        // Apply 5% buffer, cap at 10.0 FLOW
-        var feeAmount = feeEstimate * 1.05
-        if feeAmount > 10.0 {
-            feeAmount = 10.0
-        }
+        let estimatedFee = feeEstimate.flowFee ?? 0.001
+        let feeAmount = estimatedFee * 1.1
         let fees <- self.flowVault.withdraw(amount: feeAmount) as! @FlowToken.Vault
 
         log("")
-        log("Scheduling DCA plan:")
+        log("=== EFFORT TEST: Scheduling DCA plan ===")
         log("  Plan ID: ".concat(planId.toString()))
+        log("  Execution Effort: ".concat(executionEffort.toString()))
         log("  First execution: ".concat(self.firstExecutionTime.toString()))
         log("  Fee: ".concat(feeAmount.toString()))
 
-        // Borrow the Manager and schedule through it (following official scaffold pattern)
+        // Borrow the Manager and schedule through it
         let manager = self.managerCap.borrow()
             ?? panic("Could not borrow scheduler manager")
 
-        // Schedule using Manager.schedule() - this handles the ScheduledTransaction internally
+        // Schedule using Manager.schedule()
         let scheduledId = manager.schedule(
             handlerCap: self.handlerCap,
             data: txData as AnyStruct,
@@ -163,7 +136,7 @@ transaction(planId: UInt64) {
         )
 
         log("")
-        log("SUCCESS: DCA plan scheduled via Manager!")
+        log("SUCCESS: DCA plan scheduled with effort ".concat(executionEffort.toString()))
         log("  Scheduled ID: ".concat(scheduledId.toString()))
     }
 }
