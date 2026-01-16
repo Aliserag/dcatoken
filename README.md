@@ -1,31 +1,207 @@
-# DCA Token - Dollar Cost Averaging on Flow
+# Flow DCA - Dollar-Cost Averaging on Flow
 
-> Autonomous DCA execution using Flow Scheduled Transactions and EVM DEX integration
+> An educational demo showcasing **Flow Scheduled Transactions**, **EVM DeFi Integration**, and **Sponsored Transactions** - all on Flow blockchain.
 
-## Overview
+## What Makes This Special
 
-**DCA Token** enables automated Dollar-Cost Averaging on the Flow blockchain. Users can set up recurring token swaps (e.g., WFLOW → USDF) that execute autonomously without manual intervention.
+This project demonstrates Flow's unique capabilities that aren't possible on other blockchains:
 
-### Key Features
+- **Native Scheduled Transactions** - No external keepers, oracles, or off-chain infrastructure
+- **Cadence + EVM Interoperability** - Seamlessly interact with EVM DeFi protocols from Cadence
+- **Gas-Free UX** - Metamask users never need FLOW tokens for gas
 
-- **Fully Autonomous Execution** - Plans execute on schedule without user signatures
-- **Gas Sponsored** - Service account pays all Cadence transaction fees
-- **EVM DEX Integration** - Swaps via Uniswap V3 on Flow EVM
-- **Dual Wallet Support** - Works with Flow Wallet (Cadence) and MetaMask (EVM)
-- **Scheduled Transactions** - Leverages Flow's native scheduled transactions
+Unlike Chainlink Automation or off-chain keepers that require external infrastructure, fees, and trust assumptions, Flow's native Scheduled Transactions run directly on blockchain validators. This means zero external dependencies, no keeper fees, and guaranteed execution - all while staying fully decentralized.
+
+---
+
+## Key Features & Code Examples
+
+### 1. DeFi Actions with Flow EVM
+
+Execute UniswapV3 swaps directly from Cadence smart contracts.
+
+**File:** [`cadence/contracts/DCAServiceEVM.cdc`](cadence/contracts/DCAServiceEVM.cdc)
+
+```cadence
+// Execute swap on UniswapV3 via Cadence Owned Account (COA)
+access(self) fun executeSwap(...) -> UInt256 {
+    // Build UniswapV3 exactInput path: tokenIn + fee + tokenOut
+    var pathBytes: [UInt8] = []
+    for byte in tokenIn.bytes { pathBytes.append(byte) }
+    pathBytes.append(UInt8((feeTier >> 16) & 0xFF))
+    pathBytes.append(UInt8((feeTier >> 8) & 0xFF))
+    pathBytes.append(UInt8(feeTier & 0xFF))
+    for byte in tokenOut.bytes { pathBytes.append(byte) }
+
+    // exactInput selector: 0xb858183f
+    let selector: [UInt8] = [0xb8, 0x58, 0x18, 0x3f]
+    let calldata = selector.concat(encodedParams)
+
+    // Call UniswapV3 router from Cadence
+    let swapResult = self.coa.call(
+        to: self.routerAddress,
+        data: calldata,
+        gasLimit: 500_000,
+        value: EVM.Balance(attoflow: 0)
+    )
+}
+```
+
+**What this demonstrates:**
+- ABI encoding in pure Cadence
+- Calling EVM contracts from Cadence via COA
+- Building complex DeFi calldata (UniswapV3 path encoding)
+
+---
+
+### 2. DeFi Actions with Cadence
+
+Interact with ERC-20 tokens using manual ABI encoding in Cadence.
+
+**File:** [`src/lib/cadence-transactions.ts`](src/lib/cadence-transactions.ts) - `WRAP_AND_APPROVE_TX`
+
+```cadence
+// Manual ABI encoding for ERC-20 approve(address,uint256)
+var calldata: [UInt8] = [0x09, 0x5e, 0xa7, 0xb3]  // approve selector
+
+// Pad spender address to 32 bytes
+var j = 0
+while j < 12 { calldata.append(0x00); j = j + 1 }
+for byte in spenderAddressBytes { calldata.append(byte) }
+
+// Encode amount as 32-byte big-endian
+let amountBytes = amount.toBigEndianBytes()
+var k = 0
+while k < (32 - amountBytes.length) { calldata.append(0x00); k = k + 1 }
+for byte in amountBytes { calldata.append(byte) }
+
+// Execute EVM call
+let result = coa.call(to: tokenAddress, data: calldata, gasLimit: 100_000, ...)
+```
+
+**What this demonstrates:**
+- How to call any EVM contract from Cadence
+- Manual ABI encoding without external libraries
+- Combining multiple operations (wrap + approve) in one transaction
+
+---
+
+### 3. Scheduled Transactions (Autonomous Execution)
+
+The heart of Flow DCA - transactions that execute themselves on a schedule.
+
+**File:** [`cadence/contracts/DCAHandlerEVMV4.cdc`](cadence/contracts/DCAHandlerEVMV4.cdc)
+
+```cadence
+/// Handler resource that executes scheduled DCA swaps
+access(all) resource Handler: FlowTransactionScheduler.TransactionHandler {
+
+    /// Called by the network at the scheduled time
+    access(FlowTransactionScheduler.Execute)
+    fun executeTransaction(data: AnyStruct): AnyStruct? {
+        let txData = data as! TransactionData
+
+        // 1. Execute the DCA swap
+        DCAServiceEVM.executePlan(planId: txData.planId)
+
+        // 2. Automatically reschedule for next execution
+        self.scheduleNextExecution(
+            planId: txData.planId,
+            loopConfig: txData.loopConfig
+        )
+        return nil
+    }
+
+    /// Autonomous rescheduling using Manager pattern
+    access(self) fun scheduleNextExecution(...): Bool {
+        // Calculate fees
+        let baseFee = FlowFees.computeFees(
+            inclusionEffort: 1.0,
+            executionEffort: UFix64(loopConfig.executionEffort) / 100000000.0
+        )
+
+        // Schedule next execution via Manager
+        let scheduledId = schedulerManager!.scheduleByHandler(
+            handlerTypeIdentifier: self.getType().identifier,
+            handlerUUID: self.uuid,
+            data: nextTxData,
+            timestamp: nextExecutionTime!,
+            priority: loopConfig.priority,
+            executionEffort: loopConfig.executionEffort,
+            fees: <-fees
+        )
+    }
+}
+```
+
+**What this demonstrates:**
+- Implementing `FlowTransactionScheduler.TransactionHandler` interface
+- Self-rescheduling (autonomous loops)
+- Manager pattern for scheduled transactions
+- Fee calculation for different priorities
+
+---
+
+### 4. Sponsored Transactions for Metamask Users
+
+Metamask users can use the app without ever needing FLOW tokens for gas.
+
+**File:** [`src/app/api/relay/route.ts`](src/app/api/relay/route.ts)
+
+```typescript
+// Backend signs transactions on behalf of users
+const createServiceSigner = (config: NetworkConfig) => {
+  return async (account: any): Promise<any> => {
+    return {
+      ...account,
+      addr: fcl.sansPrefix(config.serviceAddress),
+      keyId: config.serviceKeyId,
+      signingFunction: async (signable: any) => ({
+        addr: fcl.withPrefix(config.serviceAddress),
+        keyId: config.serviceKeyId,
+        signature: signWithKey(
+          config.privateKey!,
+          signable.message,
+          config.signatureAlgorithm,
+          config.hashAlgorithm
+        ),
+      }),
+    };
+  };
+};
+
+// Supports different curves for different networks
+const signWithKey = (privateKey, msgHex, signatureAlgorithm, hashAlgorithm) => {
+  const curve = signatureAlgorithm === "ECDSA_secp256k1"
+    ? secp256k1Curve
+    : p256Curve;
+  const hash = hashAlgorithm === "SHA2_256"
+    ? hashMessageSHA2(msgHex)
+    : hashMessageSHA3(msgHex);
+  // ... sign and return
+};
+```
+
+**What this demonstrates:**
+- Backend service account pays all gas fees
+- Network-agnostic signing (different curves for testnet/mainnet)
+- FCL integration for server-side signing
+- Users only sign EVM transactions (Metamask), never Cadence transactions
+
+---
 
 ## How It Works
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      User Creates DCA Plan                       │
+│                    User Creates DCA Plan                         │
 │            "Swap 0.1 WFLOW → USDF every hour"                   │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                   EVM Token Approval                             │
 │   User approves WFLOW to DCA Service's shared COA address        │
-│   (One-time approval, enables all future executions)            │
+│   (One-time approval via Metamask)                               │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -42,39 +218,41 @@
 │   1. Pull WFLOW from user via COA (transferFrom)                │
 │   2. Execute swap on Uniswap V3 (WFLOW → USDF)                  │
 │   3. Transfer USDF to user's EVM address                        │
-│   4. Update plan statistics (execution count, totals)           │
+│   4. Update plan statistics                                      │
 │   5. Reschedule next execution (autonomous loop)                │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
                     (Repeats until complete)
 ```
 
+---
+
 ## Architecture
 
 ### Smart Contracts
 
-| Contract          | Network | Address              | Purpose                                    |
-| ----------------- | ------- | -------------------- | ------------------------------------------ |
-| `DCAServiceEVM`   | Mainnet | `0xca7ee55e4fc3251a` | Core DCA logic, plan management, EVM swaps |
-| `DCAServiceEVM`   | Testnet | `0x4a22e2fce83584aa` | Testnet deployment                         |
-| `DCAHandlerEVMV4` | Both    | Same as above        | Scheduled transaction handler              |
+| Contract | Address | Purpose |
+|----------|---------|---------|
+| `DCAServiceEVM` | `0xca7ee55e4fc3251a` (mainnet) | Core DCA logic, plan management, EVM swaps |
+| `DCAHandlerEVMV4` | Same as above | Scheduled transaction handler |
 
 ### EVM Integration
 
 The service uses a **shared Cadence Owned Account (COA)** to interact with EVM:
 
 - **Mainnet COA**: `0x000000000000000000000002623833e1789dbd4a`
-- **Testnet COA**: `0x000000000000000000000002c058dc16c13e4e2f`
 
-Users approve ERC-20 tokens to this COA, which then executes swaps on their behalf.
+Users approve ERC-20 tokens to this COA, which executes swaps on their behalf.
 
 ### Supported Tokens
 
-| Token | Mainnet Address                              | Testnet Address                              |
-| ----- | -------------------------------------------- | -------------------------------------------- |
-| WFLOW | `0xd3bF53DAC106A0290B0483EcBC89d40FcC961f3e` | Same                                         |
-| USDF  | `0x2aaBea2058b5aC2D339b163C6Ab6f2b6d53aabED` | `0xd7d43ab7b365f0d0789aE83F4385fA710FfdC98F` |
-| USDC  | `0xF1815bd50389c46847f0Bda824eC8da914045D14` | `0xd431955D55a99EF69BEb96BA34718d0f9fBc91b1` |
+| Token | Mainnet Address |
+|-------|-----------------|
+| WFLOW | `0xd3bF53DAC106A0290B0483EcBC89d40FcC961f3e` |
+| USDF | `0x2aaBea2058b5aC2D339b163C6Ab6f2b6d53aabED` |
+| USDC | `0xF1815bd50389c46847f0Bda824eC8da914045D14` |
+
+---
 
 ## Quick Start
 
@@ -88,41 +266,40 @@ Users approve ERC-20 tokens to this COA, which then executes swaps on their beha
 
 ```bash
 # Clone the repository
-git clone https://github.com/Aliserag/dcatoken.git
+git clone https://github.com/onflow/dcatoken.git
 cd dcatoken
 
-# Install Flow dependencies
-flow deps install
-
-# Install frontend dependencies
+# Install dependencies
 npm install
+
+# Copy environment template
+cp .env.example .env
+# Edit .env with your private keys
 ```
 
-### Environment Setup
-
-Create a `.env` file (copy from `.env.example`):
-
-```env
-# Required: Private keys for transaction signing (hex format, no 0x prefix)
-PRIVATE_KEY_TESTNET=your_testnet_private_key_here
-PRIVATE_KEY_MAINNET=your_mainnet_private_key_here
-
-# Network selection
-NEXT_PUBLIC_FLOW_NETWORK=testnet
-```
-
-### Running the Frontend
+### Running the App
 
 ```bash
 # Development
 npm run dev
 
 # Production build
-npm run build
-npm start
+npm run build && npm start
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Verify Setup
+
+```bash
+# Check Flow CLI version
+flow version  # Should be v1.0+
+
+# Test network connection
+flow scripts execute cadence/scripts/evm/get_total_plans.cdc --network mainnet
+```
+
+---
 
 ## Project Structure
 
@@ -130,51 +307,26 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 dcatoken/
 ├── cadence/
 │   ├── contracts/
-│   │   ├── DCAServiceEVM.cdc         # Core service contract (mainnet)
-│   │   ├── DCAServiceEVMTestnet.cdc  # Testnet variant
+│   │   ├── DCAServiceEVM.cdc         # Core service: plans, swaps, EVM calls
 │   │   └── DCAHandlerEVMV4.cdc       # Scheduled transaction handler
 │   ├── transactions/
-│   │   ├── evm/                      # EVM-related transactions
-│   │   │   ├── create_plan.cdc       # Create DCA plan
-│   │   │   ├── schedule_plan_v4.cdc  # Schedule execution
-│   │   │   ├── pause_plan.cdc        # Pause plan
-│   │   │   └── resume_plan.cdc       # Resume plan
-│   │   ├── cadence-user/             # Flow Wallet transactions
-│   │   │   ├── setup_coa.cdc         # Setup COA for user
-│   │   │   ├── wrap_flow.cdc         # Wrap FLOW to WFLOW
-│   │   │   └── approve_dca.cdc       # Approve tokens to DCA service
-│   │   └── admin/                    # Admin utilities
-│   │       ├── add_key.cdc           # Add account key
-│   │       └── revoke_key.cdc        # Revoke account key
+│   │   └── evm/
+│   │       ├── init_handler_v4.cdc   # Initialize handler capabilities
+│   │       └── schedule_plan_v4.cdc  # Schedule plan execution
 │   └── scripts/
 │       └── evm/                      # Query scripts
-│           ├── get_plan.cdc          # Get single plan
-│           ├── get_user_plans.cdc    # Get all user plans
-│           ├── get_total_plans.cdc   # Get plan count
-│           └── check_allowance.cdc   # Check ERC-20 allowance
 ├── src/
 │   ├── app/
-│   │   ├── page.tsx                  # Main app page
-│   │   └── api/relay/route.ts        # Backend relay API (gas sponsor)
-│   ├── components/
-│   │   └── dca/
-│   │       ├── create-plan.tsx       # Plan creation form
-│   │       ├── dashboard.tsx         # Plans dashboard
-│   │       └── header.tsx            # App header with wallet
-│   ├── config/
-│   │   └── fcl-config.ts             # FCL configuration
-│   ├── hooks/
-│   │   └── use-transaction.ts        # Transaction hook
+│   │   └── api/relay/route.ts        # Backend relay (gas sponsoring)
+│   ├── components/dca/               # React components
+│   ├── config/fcl-config.ts          # FCL configuration
 │   └── lib/
 │       ├── cadence-transactions.ts   # Cadence templates
 │       └── transaction-relay.ts      # Relay API client
-├── tests/
-│   ├── run-smoke-tests.sh            # Basic functionality tests
-│   ├── run-edge-case-tests.sh        # Edge case tests
-│   └── monitor-testnet.sh            # Testnet monitoring
-├── flow.json                         # Flow project config
-└── package.json                      # Node.js dependencies
+└── flow.json                         # Flow project config
 ```
+
+---
 
 ## Deploying Your Own Instance
 
@@ -184,7 +336,7 @@ dcatoken/
 flow keys generate
 ```
 
-Save the private key securely. Never commit it to git.
+Save the private key securely. **Never commit it to git.**
 
 ### 2. Configure flow.json
 
@@ -193,20 +345,15 @@ Add your account to `flow.json`:
 ```json
 {
   "accounts": {
-    "your-deployer": {
+    "my-deployer": {
       "address": "YOUR_ADDRESS",
       "key": {
         "type": "hex",
         "index": 0,
         "signatureAlgorithm": "ECDSA_P256",
         "hashAlgorithm": "SHA3_256",
-        "privateKey": "${YOUR_PRIVATE_KEY_ENV_VAR}"
+        "privateKey": "${MY_PRIVATE_KEY}"
       }
-    }
-  },
-  "deployments": {
-    "testnet": {
-      "your-deployer": ["DCAServiceEVM", "DCAHandlerEVMV4"]
     }
   }
 }
@@ -215,112 +362,35 @@ Add your account to `flow.json`:
 ### 3. Deploy Contracts
 
 ```bash
-# Deploy to testnet
 flow project deploy --network testnet
-
-# Or to mainnet
-flow project deploy --network mainnet
 ```
 
 ### 4. Update Frontend Config
 
 Update `src/config/fcl-config.ts` with your deployed contract addresses.
 
-## Testing
-
-### Run Smoke Tests
-
-```bash
-# Set environment variables
-export PRIVATE_KEY_TESTNET=your_key_here
-
-# Run tests
-./tests/run-smoke-tests.sh
-```
-
-### Run Edge Case Tests
-
-```bash
-./tests/run-edge-case-tests.sh
-```
-
-### Monitor Testnet Plans
-
-```bash
-# Single check
-./tests/monitor-testnet.sh
-
-# Continuous monitoring
-./tests/monitor-testnet.sh --continuous 60
-```
-
-## API Reference
-
-### Backend Relay API
-
-The relay API (`/api/relay`) sponsors gas for user transactions:
-
-```typescript
-// Create a DCA plan
-POST /api/relay
-{
-  "action": "createPlan",
-  "params": {
-    "userEVMAddress": "0x...",
-    "sourceToken": "0x...",
-    "targetToken": "0x...",
-    "amountPerExecution": "100000000000000000", // wei
-    "intervalSeconds": 3600,
-    "slippageBps": 100,
-    "maxExecutions": 10,
-    "feeTier": 3000
-  }
-}
-
-// Schedule a plan
-POST /api/relay
-{
-  "action": "schedulePlan",
-  "params": {
-    "planId": 1,
-    "delaySeconds": 60.0
-  }
-}
-```
-
-### Cadence Scripts
-
-```bash
-# Get total plans
-flow scripts execute cadence/scripts/evm/get_total_plans.cdc --network testnet
-
-# Get specific plan
-flow scripts execute cadence/scripts/evm/get_plan.cdc 1 --network testnet
-
-# Get user plans
-flow scripts execute cadence/scripts/evm/get_user_plans.cdc "0x..." --network testnet
-
-# Check allowance
-flow scripts execute cadence/scripts/evm/check_allowance.cdc "0x..." "0x..." --network testnet
-```
+---
 
 ## Security Considerations
 
-1. **Token Approvals**: Users should only approve the amount they intend to DCA.
-2. **Slippage**: Configure appropriate slippage tolerance (default: 100 bps = 1%).
-3. **Service Account**: The relay API's service account has access to execute transactions on behalf of users.
+1. **Token Approvals**: Users should only approve the amount they intend to DCA
+2. **Slippage**: Configure appropriate slippage tolerance (default: 1%)
+3. **Service Account**: Keep relay API private keys secure and rotate regularly
+4. **COA Security**: The shared COA can only execute approved operations
+
+---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+---
 
 ## Resources
 
@@ -329,9 +399,11 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Flow Scheduled Transactions](https://developers.flow.com/build/advanced-concepts/scheduled-transactions)
 - [FCL Documentation](https://developers.flow.com/tools/clients/fcl-js)
 
+---
+
 ## Support
 
-- [GitHub Issues](https://github.com/Aliserag/dcatoken/issues)
+- [GitHub Issues](https://github.com/onflow/dcatoken/issues)
 - [Flow Discord](https://discord.gg/flow)
 
 ---
