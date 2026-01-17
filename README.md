@@ -1,4 +1,4 @@
-# Flow DCA - Dollar-Cost Averaging on Flow
+# Flow DCA - Dollar-Cost Averaging on Flow Demo App
 
 > An educational demo showcasing **Flow Scheduled Transactions**, **Atomic Transactions**, **EVM DeFi Integration**, and **Sponsored Transactions** - all on Flow blockchain.
 
