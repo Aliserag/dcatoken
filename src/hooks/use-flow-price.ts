@@ -8,6 +8,9 @@ interface FlowPriceData {
   lastUpdated: number;
 }
 
+// Fallback price when API is unavailable
+const FALLBACK_FLOW_PRICE = 0.45;
+
 /**
  * Hook to fetch FLOW price in USDT from CoinGecko API
  * Used for display purposes only - actual swaps use USDC via IncrementFi
@@ -39,8 +42,14 @@ export function useFlowPrice() {
           setError(null);
         }
       } catch (err: any) {
-        console.error("Error fetching FLOW price:", err);
-        setError(err.message);
+        console.warn("Error fetching FLOW price, using fallback:", err);
+        // Use fallback price so UI still works
+        setPriceData({
+          usd: FALLBACK_FLOW_PRICE,
+          usdt: FALLBACK_FLOW_PRICE,
+          lastUpdated: Date.now() / 1000,
+        });
+        setError(null); // Don't show error for fallback
       } finally {
         setLoading(false);
       }

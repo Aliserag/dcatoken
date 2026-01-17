@@ -54,9 +54,10 @@ const flowTestnet = {
 // Get the active chain based on network setting
 const activeChain = NETWORK === "testnet" ? flowTestnet : flowMainnet;
 
-// Create wagmi config for Flow EVM with both chains
+// Create wagmi config for Flow EVM with BOTH chains
+// This allows Metamask to switch between testnet and mainnet
 const wagmiConfig = createConfig({
-  chains: [activeChain],
+  chains: [flowMainnet, flowTestnet],
   connectors: [
     injected({
       target: "metaMask",

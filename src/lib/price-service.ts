@@ -19,6 +19,14 @@ interface CoinGeckoResponse {
   };
 }
 
+// Fallback prices when API is unavailable (approximate values for demo purposes)
+const FALLBACK_PRICES: Record<string, number> = {
+  WFLOW: 0.45,
+  FLOW: 0.45,
+  USDF: 1.0,
+  USDC: 1.0,
+};
+
 // Helper to get CoinGecko ID - uses TOKEN_REGISTRY from token-metadata
 // To add new tokens, update TOKEN_REGISTRY in token-metadata.ts
 const getGeckoId = (symbol: string): string => getCoinGeckoId(symbol);
@@ -82,13 +90,15 @@ export async function getTokenPrices(symbols: string[]): Promise<Record<string, 
         }
       }
     } catch (error) {
-      console.error('Failed to fetch prices from CoinGecko:', error);
+      console.warn('Failed to fetch prices from CoinGecko, using fallback prices:', error);
 
-      // Return stale cached prices if available
+      // Return stale cached prices or fallback prices
       for (const symbol of symbolsToFetch) {
         const cached = priceCache.get(symbol);
         if (cached) {
           result[symbol] = cached.usd;
+        } else if (FALLBACK_PRICES[symbol]) {
+          result[symbol] = FALLBACK_PRICES[symbol];
         }
       }
     }

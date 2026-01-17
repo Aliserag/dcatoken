@@ -69,6 +69,69 @@ access(all) fun main(userEVMAddressHex: String, tokenAddressHex: String): UInt25
 }
 `;
 
+/**
+ * Get ERC-20 token balance for an EVM address
+ * Uses the shared COA to make the call (read-only)
+ */
+export const GET_EVM_TOKEN_BALANCE_SCRIPT = `
+import EVM from 0xEVM
+import DCAServiceEVM from 0xDCAServiceEVM
+
+access(all) fun main(userEVMAddressHex: String, tokenAddressHex: String): UInt256 {
+    let userAddress = EVM.addressFromString(userEVMAddressHex)
+    let tokenAddress = EVM.addressFromString(tokenAddressHex)
+
+    // balanceOf(address) function selector: 0x70a08231
+    let functionSelector: [UInt8] = [0x70, 0xa0, 0x82, 0x31]
+
+    // Encode the address parameter (32 bytes, left-padded)
+    var addressBytes: [UInt8] = []
+    // 12 bytes of padding
+    var i = 0
+    while i < 12 {
+        addressBytes.append(0)
+        i = i + 1
+    }
+    // 20 bytes of address
+    for byte in userAddress.bytes {
+        addressBytes.append(byte)
+    }
+
+    // Combine function selector + encoded address
+    var calldata: [UInt8] = functionSelector
+    for byte in addressBytes {
+        calldata.append(byte)
+    }
+
+    // Use the shared COA to make a static call (read-only)
+    let result = DCAServiceEVM.sharedCOA.call(
+        to: tokenAddress,
+        data: calldata,
+        gasLimit: 100000,
+        value: EVM.Balance(attoflow: 0)
+    )
+
+    if result.status != EVM.Status.successful {
+        return 0
+    }
+
+    // Decode the result (32 bytes representing a UInt256)
+    if result.data.length < 32 {
+        return 0
+    }
+
+    var balance: UInt256 = 0
+    var j = 0
+    while j < 32 {
+        balance = balance << 8
+        balance = balance + UInt256(result.data[j])
+        j = j + 1
+    }
+
+    return balance
+}
+`;
+
 
 /**
  * Get FLOW balance (native Cadence)

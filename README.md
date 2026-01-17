@@ -16,79 +16,122 @@ Unlike Chainlink Automation or off-chain keepers that require external infrastru
 
 ## Key Features & Code Examples
 
-### 1. DeFi Actions with Flow EVM
+### 1. Cadence → EVM Interoperability
 
-Execute UniswapV3 swaps directly from Cadence smart contracts.
+**The key innovation:** Cadence smart contracts can directly call any EVM contract on Flow. This isn't a bridge or wrapped call—it's native interoperability where Cadence controls an EVM account (COA) and executes EVM transactions atomically.
+
+Here, a Cadence contract executes a UniswapV3 swap by building the calldata and calling the EVM router:
 
 **File:** [`cadence/contracts/DCAServiceEVM.cdc`](cadence/contracts/DCAServiceEVM.cdc)
 
 ```cadence
-// Execute swap on UniswapV3 via Cadence Owned Account (COA)
-access(self) fun executeSwap(...) -> UInt256 {
-    // Build UniswapV3 exactInput path: tokenIn + fee + tokenOut
-    var pathBytes: [UInt8] = []
-    for byte in tokenIn.bytes { pathBytes.append(byte) }
-    pathBytes.append(UInt8((feeTier >> 16) & 0xFF))
-    pathBytes.append(UInt8((feeTier >> 8) & 0xFF))
-    pathBytes.append(UInt8(feeTier & 0xFF))
-    for byte in tokenOut.bytes { pathBytes.append(byte) }
+access(all) contract DCAServiceEVM {
+    // Cadence contract owns an EVM account
+    access(self) let coa: @EVM.CadenceOwnedAccount
+    access(all) let routerAddress: EVM.EVMAddress  // UniswapV3 Router
 
-    // exactInput selector: 0xb858183f
-    let selector: [UInt8] = [0xb8, 0x58, 0x18, 0x3f]
-    let calldata = selector.concat(encodedParams)
+    access(self) fun executeSwap(
+        tokenIn: EVM.EVMAddress,
+        tokenOut: EVM.EVMAddress,
+        amountIn: UInt256,
+        feeTier: UInt32
+    ): UInt256 {
+        // Build UniswapV3 exactInput path: tokenIn (20 bytes) + fee (3 bytes) + tokenOut (20 bytes)
+        var pathBytes: [UInt8] = []
+        for byte in tokenIn.bytes { pathBytes.append(byte) }
+        pathBytes.append(UInt8((feeTier >> 16) & 0xFF))
+        pathBytes.append(UInt8((feeTier >> 8) & 0xFF))
+        pathBytes.append(UInt8(feeTier & 0xFF))
+        for byte in tokenOut.bytes { pathBytes.append(byte) }
 
-    // Call UniswapV3 router from Cadence
-    let swapResult = self.coa.call(
-        to: self.routerAddress,
-        data: calldata,
-        gasLimit: 500_000,
-        value: EVM.Balance(attoflow: 0)
-    )
+        // Build calldata: exactInput selector (0xb858183f) + encoded params
+        let selector: [UInt8] = [0xb8, 0x58, 0x18, 0x3f]
+        let calldata = selector.concat(self.encodeExactInputParams(pathBytes, ...))
+
+        // Execute EVM call from Cadence - this is the magic!
+        let result = self.coa.call(
+            to: self.routerAddress,
+            data: calldata,
+            gasLimit: 500_000,
+            value: EVM.Balance(attoflow: 0)
+        )
+
+        // Decode and return amount out
+        if result.status == EVM.Status.successful {
+            let decoded = EVM.decodeABI(types: [Type<UInt256>()], data: result.data)
+            return decoded[0] as! UInt256
+        }
+        return 0
+    }
 }
 ```
 
-**What this demonstrates:**
-- ABI encoding in pure Cadence
-- Calling EVM contracts from Cadence via COA
-- Building complex DeFi calldata (UniswapV3 path encoding)
+**Why this matters:**
+- **Native interop** - Cadence contracts can use any EVM DeFi protocol (Uniswap, Aave, etc.)
+- **Atomic execution** - EVM calls are part of the Cadence transaction (all-or-nothing)
+- **No bridges** - Not a wrapped call or message passing; direct EVM execution
+- **Full control** - Cadence logic decides when/how to call EVM based on on-chain state
 
 ---
 
-### 2. DeFi Actions with Cadence
+### 2. Atomic Multi-Step Transactions
 
-Interact with ERC-20 tokens using manual ABI encoding in Cadence.
+**The key innovation:** On EVM chains, wrapping ETH→WETH and approving a spender requires **2 separate transactions**. On Flow, Cadence can execute both EVM calls in **one atomic transaction**—if either fails, both revert.
 
 **File:** [`src/lib/cadence-transactions.ts`](src/lib/cadence-transactions.ts) - `WRAP_AND_APPROVE_TX`
 
 ```cadence
-// Manual ABI encoding for ERC-20 approve(address,uint256)
-var calldata: [UInt8] = [0x09, 0x5e, 0xa7, 0xb3]  // approve selector
+transaction(amount: UFix64, spenderAddress: String, approvalAmount: UInt256) {
+    let coa: auth(EVM.Call) &EVM.CadenceOwnedAccount
 
-// Pad spender address to 32 bytes
-var j = 0
-while j < 12 { calldata.append(0x00); j = j + 1 }
-for byte in spenderAddressBytes { calldata.append(byte) }
+    execute {
+        // ========== STEP 1: Wrap FLOW → WFLOW ==========
+        let depositCalldata: [UInt8] = [0xd0, 0xe3, 0x0d, 0xb0]  // deposit()
+        let wrapResult = self.coa.call(
+            to: wflowAddress,
+            data: depositCalldata,
+            gasLimit: 100_000,
+            value: amountInWei  // Send FLOW with the call
+        )
+        // If wrap fails, entire transaction reverts
 
-// Encode amount as 32-byte big-endian
-let amountBytes = amount.toBigEndianBytes()
-var k = 0
-while k < (32 - amountBytes.length) { calldata.append(0x00); k = k + 1 }
-for byte in amountBytes { calldata.append(byte) }
+        // ========== STEP 2: Approve DCA Service ==========
+        // Build approve(address,uint256) calldata manually
+        var calldata: [UInt8] = [0x09, 0x5e, 0xa7, 0xb3]  // approve selector
 
-// Execute EVM call
-let result = coa.call(to: tokenAddress, data: calldata, gasLimit: 100_000, ...)
+        // Encode spender address (pad to 32 bytes)
+        var j = 0
+        while j < 12 { calldata.append(0x00); j = j + 1 }
+        for byte in spenderAddressBytes { calldata.append(byte) }
+
+        // Encode amount (32-byte big-endian)
+        let amountBytes = approvalAmount.toBigEndianBytes()
+        var k = 0
+        while k < (32 - amountBytes.length) { calldata.append(0x00); k = k + 1 }
+        for byte in amountBytes { calldata.append(byte) }
+
+        let approveResult = self.coa.call(
+            to: wflowAddress,
+            data: calldata,
+            gasLimit: 100_000,
+            value: EVM.Balance(attoflow: 0)
+        )
+        // If approve fails, wrap is also reverted - atomic!
+    }
+}
 ```
 
-**What this demonstrates:**
-- How to call any EVM contract from Cadence
-- Manual ABI encoding without external libraries
-- Combining multiple operations (wrap + approve) in one transaction
+**Why this matters:**
+- **2 EVM transactions → 1 Cadence transaction** - Better UX, lower fees
+- **Atomic guarantees** - Either both succeed or both revert (no stuck approvals)
+- **No ABI libraries needed** - Manual encoding works in pure Cadence
+- **Composable** - Can chain unlimited EVM calls in one transaction
 
 ---
 
 ### 3. Scheduled Transactions (Autonomous Execution)
 
-The heart of Flow DCA - transactions that execute themselves on a schedule.
+**The key innovation:** Flow validators natively execute scheduled transactions—no Chainlink Keepers, no Gelato, no off-chain bots. Your handler runs exactly when scheduled, with cryptographic guarantees.
 
 **File:** [`cadence/contracts/DCAHandlerEVMV4.cdc`](cadence/contracts/DCAHandlerEVMV4.cdc)
 
@@ -96,85 +139,128 @@ The heart of Flow DCA - transactions that execute themselves on a schedule.
 /// Handler resource that executes scheduled DCA swaps
 access(all) resource Handler: FlowTransactionScheduler.TransactionHandler {
 
-    /// Called by the network at the scheduled time
+    /// Called automatically by Flow validators at the scheduled time
     access(FlowTransactionScheduler.Execute)
-    fun executeTransaction(data: AnyStruct): AnyStruct? {
+    fun executeTransaction(id: UInt64, data: AnyStruct?) {
         let txData = data as! TransactionData
 
-        // 1. Execute the DCA swap
-        DCAServiceEVM.executePlan(planId: txData.planId)
+        // Execute the DCA swap (calls into EVM via DCAServiceEVM)
+        let success = DCAServiceEVM.executePlan(planId: txData.planId)
 
-        // 2. Automatically reschedule for next execution
-        self.scheduleNextExecution(
-            planId: txData.planId,
-            loopConfig: txData.loopConfig
-        )
-        return nil
+        // If successful and plan still active, schedule NEXT execution
+        if success {
+            self.scheduleNextExecution(
+                planId: txData.planId,
+                nextExecutionTime: plan.nextExecutionTime,
+                loopConfig: txData.loopConfig
+            )
+        }
     }
 
-    /// Autonomous rescheduling using Manager pattern
-    access(self) fun scheduleNextExecution(...): Bool {
-        // Calculate fees
+    /// Self-rescheduling: the handler schedules its own next run
+    access(self) fun scheduleNextExecution(
+        planId: UInt64,
+        nextExecutionTime: UFix64?,
+        loopConfig: LoopConfig
+    ): Bool {
+        // Calculate fees based on execution effort and priority
         let baseFee = FlowFees.computeFees(
             inclusionEffort: 1.0,
-            executionEffort: UFix64(loopConfig.executionEffort) / 100000000.0
+            executionEffort: UFix64(loopConfig.executionEffort) / 100_000_000.0
         )
+        let priorityMultiplier = FlowTransactionScheduler.getConfig()
+            .priorityFeeMultipliers[loopConfig.priority]!
+        let feeAmount = baseFee * priorityMultiplier * 1.05  // 5% buffer
 
-        // Schedule next execution via Manager
-        let scheduledId = schedulerManager!.scheduleByHandler(
+        // Withdraw fees from pre-funded vault
+        let feeVault = loopConfig.feeProviderCap.borrow()!
+        let fees <- feeVault.withdraw(amount: feeAmount)
+
+        // Schedule next execution - Handler schedules itself!
+        let schedulerManager = loopConfig.schedulerManagerCap.borrow()!
+        let scheduledId = schedulerManager.scheduleByHandler(
             handlerTypeIdentifier: self.getType().identifier,
             handlerUUID: self.uuid,
-            data: nextTxData,
+            data: TransactionData(planId: planId, loopConfig: loopConfig),
             timestamp: nextExecutionTime!,
             priority: loopConfig.priority,
             executionEffort: loopConfig.executionEffort,
-            fees: <-fees
+            fees: <-fees as! @FlowToken.Vault
         )
+
+        return scheduledId > 0
     }
 }
 ```
 
-**What this demonstrates:**
-- Implementing `FlowTransactionScheduler.TransactionHandler` interface
-- Self-rescheduling (autonomous loops)
-- Manager pattern for scheduled transactions
-- Fee calculation for different priorities
+**Why this matters:**
+- **No off-chain infrastructure** - Validators execute your handler, not external keepers
+- **Self-rescheduling loops** - Handler schedules its own next execution (autonomous)
+- **Guaranteed execution** - Scheduled transactions run or fees are refunded
+- **Priority levels** - Low/Medium/High priority affects fee multiplier and execution order
+- **Pre-funded fee vault** - Fees for all executions deposited upfront
 
 ---
 
-### 4. Sponsored Transactions for Metamask Users
+### 4. Sponsored Transactions (Gas-Free UX)
 
-Metamask users can use the app without ever needing FLOW tokens for gas.
+Flow has a unique transaction model where every transaction has **three roles** that can be different accounts:
+- **Proposer** - Provides sequence number (prevents replay attacks)
+- **Payer** - Pays the gas fees
+- **Authorizer** - Signs to authorize the transaction
+
+This separation enables native gas sponsorship without smart contract paymasters.
+
+#### Flow Wallet Users (Native Sponsorship)
+
+Flow Wallet already sponsors transactions for its users. When a Flow Wallet user interacts with this app, the wallet infrastructure handles gas fees automatically using Flow's native payer separation.
+
+#### Metamask Users (Relay Pattern)
+
+Metamask users interact purely with EVM and don't have FLOW tokens. We solve this with a **relay service** that acts as a paymaster:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Metamask User                                                   │
+│  - Signs EVM transactions (token approvals)                     │
+│  - Never needs FLOW tokens                                      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Relay API (Backend Service)                                     │
+│  - Receives plan creation requests                              │
+│  - Service account acts as PROPOSER + PAYER + AUTHORIZER        │
+│  - Signs Cadence transactions server-side                       │
+│  - Pays all gas fees from service account                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  DCA Service (Shared COA)                                        │
+│  - Executes swaps using pre-approved token allowances           │
+│  - Scheduled transaction fees paid from funded fee vault        │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 **File:** [`src/app/api/relay/route.ts`](src/app/api/relay/route.ts)
 
 ```typescript
-// Backend signs transactions on behalf of users
-const createServiceSigner = (config: NetworkConfig) => {
-  return async (account: any): Promise<any> => {
-    return {
-      ...account,
-      addr: fcl.sansPrefix(config.serviceAddress),
-      keyId: config.serviceKeyId,
-      signingFunction: async (signable: any) => ({
-        addr: fcl.withPrefix(config.serviceAddress),
-        keyId: config.serviceKeyId,
-        signature: signWithKey(
-          config.privateKey!,
-          signable.message,
-          config.signatureAlgorithm,
-          config.hashAlgorithm
-        ),
-      }),
-    };
-  };
-};
+// Service account signs as proposer, payer, AND authorizer
+const txId = await fcl.mutate({
+  cadence: createPlanTransaction,
+  args: (arg, t) => [...],
+  proposer: serviceSigner,   // Service account
+  payer: serviceSigner,      // Service account pays gas
+  authorizations: [serviceSigner],
+  limit: 9999,
+});
 
-// Supports different curves for different networks
+// The serviceSigner uses the correct curve for each network
 const signWithKey = (privateKey, msgHex, signatureAlgorithm, hashAlgorithm) => {
   const curve = signatureAlgorithm === "ECDSA_secp256k1"
-    ? secp256k1Curve
-    : p256Curve;
+    ? secp256k1Curve  // Testnet
+    : p256Curve;       // Mainnet
   const hash = hashAlgorithm === "SHA2_256"
     ? hashMessageSHA2(msgHex)
     : hashMessageSHA3(msgHex);
@@ -183,10 +269,11 @@ const signWithKey = (privateKey, msgHex, signatureAlgorithm, hashAlgorithm) => {
 ```
 
 **What this demonstrates:**
-- Backend service account pays all gas fees
-- Network-agnostic signing (different curves for testnet/mainnet)
-- FCL integration for server-side signing
+- Flow's 3-role transaction model enables native sponsorship
+- No smart contract paymaster needed (unlike EVM chains)
+- Backend service pays all Cadence gas fees
 - Users only sign EVM transactions (Metamask), never Cadence transactions
+- Scheduled transaction fees are pre-funded into a fee vault
 
 ---
 
@@ -266,7 +353,7 @@ Users approve ERC-20 tokens to this COA, which executes swaps on their behalf.
 
 ```bash
 # Clone the repository
-git clone https://github.com/onflow/dcatoken.git
+git clone https://github.com/Aliserag/dcatoken.git
 cd dcatoken
 
 # Install dependencies
@@ -403,7 +490,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- [GitHub Issues](https://github.com/onflow/dcatoken/issues)
+- [GitHub Issues](https://github.com/Aliserag/dcatoken/issues)
 - [Flow Discord](https://discord.gg/flow)
 
 ---

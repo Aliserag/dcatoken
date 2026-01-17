@@ -68,7 +68,7 @@ const DCA_COA_ADDRESSES = {
 const getNetworkFromContext = (): keyof typeof CONTRACTS => {
   // Server-side: use env var
   if (typeof window === "undefined") {
-    return (process.env.NEXT_PUBLIC_FLOW_NETWORK || "mainnet") as keyof typeof CONTRACTS;
+    return (process.env.NEXT_PUBLIC_FLOW_NETWORK || "testnet") as keyof typeof CONTRACTS;
   }
 
   // Client-side: check URL param for network switch
@@ -94,7 +94,7 @@ export const NETWORK = getNetworkFromContext();
 export const EVM_TOKENS = NETWORK === "testnet" ? EVM_TOKENS_TESTNET : EVM_TOKENS_MAINNET;
 
 // Export network-aware COA address
-export const DCA_COA_ADDRESS = DCA_COA_ADDRESSES[NETWORK] || DCA_COA_ADDRESSES.mainnet;
+export const DCA_COA_ADDRESS = DCA_COA_ADDRESSES[NETWORK] || DCA_COA_ADDRESSES.testnet;
 
 // Get contract addresses for current network
 export const getContractAddress = (contractName: keyof typeof CONTRACTS.mainnet): string => {

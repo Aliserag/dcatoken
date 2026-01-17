@@ -2,10 +2,18 @@
 
 import { useEffect, useState, useRef } from "react";
 import * as fcl from "@onflow/fcl";
-import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
+import {
+  useAccount,
+  useConnect,
+  useDisconnect,
+  useBalance,
+  useSwitchChain,
+  useChainId,
+} from "wagmi";
 import { injected } from "wagmi/connectors";
 import { useWalletType } from "@/components/wallet-selector";
 import { NETWORK } from "@/config/fcl-config";
+import { flowMainnet, flowTestnet } from "@/components/evm-provider";
 
 export function DCAHeader() {
   const { walletType, setWalletType, isMetamask, isFlow } = useWalletType();
@@ -18,13 +26,34 @@ export function DCAHeader() {
   const [showNetworkDropdown, setShowNetworkDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const isTestnet = NETWORK === "testnet";
-  const isMainnet = NETWORK === "mainnet";
+  // Use state for network to avoid hydration mismatch (server vs client detection differs)
+  const [currentNetwork, setCurrentNetwork] = useState<string>("testnet");
+
+  useEffect(() => {
+    setCurrentNetwork(NETWORK);
+  }, []);
+
+  const isTestnet = currentNetwork === "testnet";
+  const isMainnet = currentNetwork === "mainnet";
+
+  // Metamask wallet state (wagmi hooks) - must be defined before switchNetwork
+  const { address: evmAddress, isConnected: isEvmConnected } = useAccount();
+  const { connect: connectMetamask, isPending: isMetamaskConnecting } =
+    useConnect();
+  const { disconnect: disconnectMetamask } = useDisconnect();
+  const { data: evmBalanceData } = useBalance({
+    address: evmAddress,
+  });
+  const { switchChain } = useSwitchChain();
+  const chainId = useChainId();
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setShowNetworkDropdown(false);
       }
     };
@@ -32,23 +61,29 @@ export function DCAHeader() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const switchNetwork = (network: "testnet" | "mainnet") => {
-    if (network === NETWORK) {
+  const switchNetwork = async (network: "testnet" | "mainnet") => {
+    if (network === currentNetwork) {
       setShowNetworkDropdown(false);
       return;
     }
+
+    // If user is connected via Metamask, prompt them to switch chains first
+    if (isMetamask && isEvmConnected) {
+      const targetChainId =
+        network === "testnet" ? flowTestnet.id : flowMainnet.id;
+      try {
+        await switchChain({ chainId: targetChainId });
+      } catch (error) {
+        console.error("Failed to switch Metamask chain:", error);
+        // Still proceed with network switch even if Metamask switch fails
+        // User will see the wrong network warning on Create Plan page
+      }
+    }
+
     // Store preference and reload to apply new network config
     localStorage.setItem("preferred_network", network);
     window.location.href = `/?network=${network}`;
   };
-
-  // Metamask wallet state (wagmi hooks)
-  const { address: evmAddress, isConnected: isEvmConnected } = useAccount();
-  const { connect: connectMetamask, isPending: isMetamaskConnecting } = useConnect();
-  const { disconnect: disconnectMetamask } = useDisconnect();
-  const { data: evmBalanceData } = useBalance({
-    address: evmAddress,
-  });
 
   // Subscribe to Flow user authentication state
   useEffect(() => {
@@ -74,12 +109,22 @@ export function DCAHeader() {
 
           access(all) fun main(address: Address): UFix64 {
             let account = getAccount(address)
-            let vaultRef = account.capabilities
-              .get<&FlowToken.Vault>(/public/flowTokenBalance)
-              .borrow()
-              ?? panic("Could not borrow Balance reference")
 
-            return vaultRef.balance
+            // Try to borrow the balance capability, return 0.0 if not available
+            if let vaultRef = account.capabilities
+              .get<&FlowToken.Vault>(/public/flowTokenBalance)
+              .borrow() {
+              return vaultRef.balance
+            }
+
+            // Fallback: try the default balance path
+            if let balanceRef = account.capabilities
+              .get<&{FungibleToken.Balance}>(/public/flowTokenBalance)
+              .borrow() {
+              return balanceRef.balance
+            }
+
+            return 0.0
           }
         `,
         args: (arg, t) => [arg(address, t.Address)],
@@ -126,7 +171,11 @@ export function DCAHeader() {
   const isConnected = isMetamask ? isEvmConnected : flowAddress !== null;
   const currentAddress = isMetamask ? evmAddress : flowAddress;
   const currentBalance = isMetamask
-    ? (evmBalanceData ? (Number(evmBalanceData.value) / 10 ** evmBalanceData.decimals).toFixed(2) : "0.00")
+    ? evmBalanceData
+      ? (Number(evmBalanceData.value) / 10 ** evmBalanceData.decimals).toFixed(
+          2
+        )
+      : "0.00"
     : flowBalance;
   const isConnecting = isMetamask ? isMetamaskConnecting : isLoading;
 
@@ -168,7 +217,9 @@ export function DCAHeader() {
                 <div className="bg-white dark:bg-[#1a1a1a] rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-2xl">1️⃣</span>
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">Get Test FLOW</span>
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Get Test FLOW
+                    </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                     Get free testnet FLOW tokens from the official faucet.
@@ -179,19 +230,41 @@ export function DCAHeader() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 bg-[#00EF8B] hover:bg-[#00D57A] text-black font-medium px-4 py-2 rounded-lg text-sm transition-colors"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
                     </svg>
                     Flow Faucet
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                      />
                     </svg>
                   </a>
                 </div>
                 <div className="bg-white dark:bg-[#1a1a1a] rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-2xl">2️⃣</span>
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">Swap for Other Tokens</span>
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Swap for Other Tokens
+                    </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                     Swap your FLOW for WFLOW or other tokens on FlowSwap.
@@ -202,18 +275,39 @@ export function DCAHeader() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                      />
                     </svg>
                     FlowSwap
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                      />
                     </svg>
                   </a>
                 </div>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
-                Testnet tokens have no real value and are for testing purposes only.
+                Testnet tokens have no real value and are for testing purposes
+                only.
               </p>
             </div>
           </div>
@@ -245,7 +339,9 @@ export function DCAHeader() {
                   {/* Network Switcher */}
                   <div className="relative" ref={dropdownRef}>
                     <button
-                      onClick={() => setShowNetworkDropdown(!showNetworkDropdown)}
+                      onClick={() =>
+                        setShowNetworkDropdown(!showNetworkDropdown)
+                      }
                       className={`flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-full cursor-pointer transition-all hover:scale-105 ${
                         isTestnet
                           ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-900/70"
@@ -254,9 +350,19 @@ export function DCAHeader() {
                           : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
                       }`}
                     >
-                      {NETWORK.toUpperCase()}
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      {currentNetwork.toUpperCase()}
+                      <svg
+                        className="w-3 h-3"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
                       </svg>
                     </button>
                     {/* Dropdown Menu */}
@@ -270,11 +376,27 @@ export function DCAHeader() {
                               : "hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-300"
                           }`}
                         >
-                          <span className={`w-2 h-2 rounded-full ${isMainnet ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600"}`} />
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              isMainnet
+                                ? "bg-green-500"
+                                : "bg-gray-300 dark:bg-gray-600"
+                            }`}
+                          />
                           Mainnet
                           {isMainnet && (
-                            <svg className="w-4 h-4 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            <svg
+                              className="w-4 h-4 ml-auto"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
                             </svg>
                           )}
                         </button>
@@ -286,11 +408,27 @@ export function DCAHeader() {
                               : "hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-300"
                           }`}
                         >
-                          <span className={`w-2 h-2 rounded-full ${isTestnet ? "bg-yellow-500" : "bg-gray-300 dark:bg-gray-600"}`} />
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              isTestnet
+                                ? "bg-yellow-500"
+                                : "bg-gray-300 dark:bg-gray-600"
+                            }`}
+                          />
                           Testnet
                           {isTestnet && (
-                            <svg className="w-4 h-4 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            <svg
+                              className="w-4 h-4 ml-auto"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
                             </svg>
                           )}
                         </button>
@@ -299,60 +437,69 @@ export function DCAHeader() {
                   </div>
                 </div>
                 <p className="text-xs text-gray-600 dark:text-gray-400">
-                  Smart Investing, Automated
+                  Educational Demo App
                 </p>
               </div>
             </div>
 
-          {/* Wallet Connection */}
-          <div className="flex items-center gap-3">
-            {isConnected ? (
-              <>
-                <div className="hidden md:flex items-center gap-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl px-4 py-2">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full animate-pulse ${isMetamask ? 'bg-orange-500' : 'bg-[#00EF8B]'}`} />
-                    <span className="text-sm font-mono">{shortAddress}</span>
+            {/* Wallet Connection */}
+            <div className="flex items-center gap-3">
+              {isConnected ? (
+                <>
+                  <div className="hidden md:flex items-center gap-3 bg-white dark:bg-[#1a1a1a] border-2 border-gray-200 dark:border-[#2a2a2a] rounded-xl px-4 py-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-2 h-2 rounded-full animate-pulse ${
+                          isMetamask ? "bg-orange-500" : "bg-[#00EF8B]"
+                        }`}
+                      />
+                      <span className="text-sm font-mono">{shortAddress}</span>
+                    </div>
+                    <div className="w-px h-6 bg-gray-200 dark:bg-[#2a2a2a]" />
+                    <div className="text-sm">
+                      <span className="font-bold font-mono">
+                        {currentBalance} FLOW
+                      </span>
+                    </div>
                   </div>
-                  <div className="w-px h-6 bg-gray-200 dark:bg-[#2a2a2a]" />
-                  <div className="text-sm">
-                    <span className="font-bold font-mono">{currentBalance} FLOW</span>
-                  </div>
-                </div>
-                <button
-                  onClick={handleDisconnect}
-                  className="px-4 py-2 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#3a3a3a] rounded-xl text-sm font-medium transition-colors cursor-pointer"
-                >
-                  Disconnect
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => {
-                    setWalletType("flow");
-                    setTimeout(() => connectFlowWallet(), 100);
-                  }}
-                  disabled={isLoading}
-                  className="bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-400 disabled:cursor-not-allowed text-black font-bold px-5 py-2.5 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#00EF8B]/30 cursor-pointer"
-                >
-                  {isLoading && isFlow ? "Connecting..." : "Flow Wallet"}
-                </button>
-                <button
-                  onClick={() => {
-                    setWalletType("metamask");
-                    setTimeout(() => connectMetamask({ connector: injected() }), 100);
-                  }}
-                  disabled={isMetamaskConnecting}
-                  className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg shadow-orange-500/30 cursor-pointer"
-                >
-                  {isMetamaskConnecting ? "Connecting..." : "Metamask"}
-                </button>
-              </>
-            )}
+                  <button
+                    onClick={handleDisconnect}
+                    className="px-4 py-2 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#3a3a3a] rounded-xl text-sm font-medium transition-colors cursor-pointer"
+                  >
+                    Disconnect
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setWalletType("flow");
+                      setTimeout(() => connectFlowWallet(), 100);
+                    }}
+                    disabled={isLoading}
+                    className="bg-[#00EF8B] hover:bg-[#00D57A] disabled:bg-gray-400 disabled:cursor-not-allowed text-black font-bold px-5 py-2.5 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[#00EF8B]/30 cursor-pointer"
+                  >
+                    {isLoading && isFlow ? "Connecting..." : "Flow Wallet"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setWalletType("metamask");
+                      setTimeout(
+                        () => connectMetamask({ connector: injected() }),
+                        100
+                      );
+                    }}
+                    disabled={isMetamaskConnecting}
+                    className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg shadow-orange-500/30 cursor-pointer"
+                  >
+                    {isMetamaskConnecting ? "Connecting..." : "Metamask"}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
     </>
   );
 }

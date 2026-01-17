@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import * as fcl from "@onflow/fcl";
-import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt, useBalance } from "wagmi";
+import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt, useBalance, useSwitchChain, useChainId } from "wagmi";
 import { parseUnits } from "viem";
+import { flowMainnet, flowTestnet } from "@/components/evm-provider";
 import { useTransaction } from "@/hooks/use-transaction";
 import { useWalletType } from "@/components/wallet-selector";
 import {
@@ -15,7 +16,7 @@ import {
   CHECK_ALLOWANCE_SCRIPT,
 } from "@/lib/cadence-transactions";
 import { ERC20_ABI, createAndScheduleDCAPlan } from "@/lib/transaction-relay";
-import { TransactionStatus, EVM_TOKENS, DCA_COA_ADDRESS } from "@/config/fcl-config";
+import { TransactionStatus, EVM_TOKENS, DCA_COA_ADDRESS, NETWORK } from "@/config/fcl-config";
 import { getTokenPrices } from "@/lib/price-service";
 
 // Supported tokens for DCA
@@ -47,6 +48,12 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
 
   // Metamask wallet state (wagmi)
   const { address: evmAddress, isConnected: isEvmConnected } = useAccount();
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+
+  // Expected chain based on network setting
+  const expectedChainId = NETWORK === "testnet" ? flowTestnet.id : flowMainnet.id;
+  const isOnCorrectChain = chainId === expectedChainId;
 
   // Form state
   const [amountPerInterval, setAmountPerInterval] = useState("");
@@ -216,12 +223,16 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
     return () => window.clearInterval(priceInterval);
   }, []);
 
-  // Check COA when source token changes
+  // Check COA and fetch balance when source token changes
   useEffect(() => {
     if (userCOAAddress) {
       checkApproval(userCOAAddress, sourceToken.address);
+      // For non-FLOW tokens, fetch the balance from COA
+      if (sourceToken.symbol !== "FLOW") {
+        fetchCoaTokenBalance(userCOAAddress, sourceToken.address, sourceToken.decimals);
+      }
     }
-  }, [userCOAAddress, sourceToken.address]);
+  }, [userCOAAddress, sourceToken.address, sourceToken.symbol, sourceToken.decimals]);
 
   // Reset funding state when plan parameters change (for Flow wallet FLOW token)
   // This ensures user must fund for each new plan configuration
@@ -291,6 +302,14 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
     } finally {
       setLoadingBalance(false);
     }
+  };
+
+  // For non-FLOW tokens in COA, we can't easily query balance from scripts
+  // Show COA address so user can check balance in their EVM wallet
+  const fetchCoaTokenBalance = async (coaAddress: string, tokenAddress: string, decimals: number) => {
+    // EVM token balances require the user to check in their wallet
+    // We just display "in COA" to indicate tokens should be there
+    setCoaTokenBalance("in COA");
   };
 
   const handleSetupCOA = async (e: React.FormEvent) => {
@@ -376,7 +395,20 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
 
   // Metamask: Approve ERC-20 token spending
   // Only approve the exact amount needed for this DCA plan (safer than unlimited)
-  const handleMetamaskApprove = () => {
+  const handleMetamaskApprove = async () => {
+    // First, ensure we're on the correct chain
+    if (!isOnCorrectChain) {
+      try {
+        await switchChain({ chainId: expectedChainId });
+        // Give Metamask a moment to switch
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (switchError) {
+        console.error("Failed to switch chain:", switchError);
+        alert(`Please switch Metamask to Flow EVM ${NETWORK === "testnet" ? "Testnet" : "Mainnet"} (chain ${expectedChainId})`);
+        return;
+      }
+    }
+
     // Calculate exact amount needed: amountPerInterval × maxExecutions
     const executions = maxExecutions ? parseInt(maxExecutions) : 1;
     const totalAmountNeeded = parseFloat(amountPerInterval) * executions;
@@ -518,8 +550,18 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
                 {isFlow ? (
                   sourceToken.symbol === "FLOW" ? (
                     <>FLOW Balance: {loadingBalance ? "..." : flowBalance}</>
+                  ) : userCOAAddress ? (
+                    <a
+                      href={`https://${NETWORK === "testnet" ? "evm-testnet" : "evm"}.flowscan.io/address/${userCOAAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-[#00EF8B] underline"
+                      title="Check balance on FlowScan"
+                    >
+                      {sourceToken.symbol} in COA ↗
+                    </a>
                   ) : (
-                    <>COA: {userCOAAddress ? `${userCOAAddress.slice(0, 8)}...` : "Not set up"}</>
+                    <>Setup COA first</>
                   )
                 ) : isEvmConnected ? (
                   <>{sourceToken.symbol} Balance: {isLoadingMetamaskBalance ? "..." : formattedMetamaskBalance}</>
@@ -684,6 +726,21 @@ export function CreateDCAPlan({ onPlanCreated }: CreateDCAPlanProps) {
             </div>
           ) : !hasMetamaskApproval ? (
             <div className="space-y-3">
+              {/* Chain warning */}
+              {!isOnCorrectChain && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+                  <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                    ⚠️ Wrong Network
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                    Please switch Metamask to <span className="font-semibold">Flow EVM {NETWORK === "testnet" ? "Testnet" : "Mainnet"}</span> (Chain ID: {expectedChainId})
+                  </p>
+                  <p className="text-xs text-red-500 mt-1">
+                    Current chain: {chainId}
+                  </p>
+                </div>
+              )}
+
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-4">
                 <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
                   Approve DCA Service

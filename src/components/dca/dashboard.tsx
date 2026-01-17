@@ -7,10 +7,7 @@ import { useWalletType } from "@/components/wallet-selector";
 import {
   GET_USER_PLANS_SCRIPT,
   GET_USER_COA_SCRIPT,
-  PAUSE_PLAN_TX,
-  RESUME_PLAN_TX,
 } from "@/lib/cadence-transactions";
-import { useTransaction } from "@/hooks/use-transaction";
 import { useFlowPrice } from "@/hooks/use-flow-price";
 import { NETWORK } from "@/config/fcl-config";
 
@@ -284,7 +281,6 @@ export function DCADashboard() {
   const [statusFilter, setStatusFilter] = useState<
     "all" | "active" | "completed" | "paused"
   >("all");
-  const { executeTransaction } = useTransaction();
   const { priceData } = useFlowPrice();
 
   // Handle Flow wallet authentication
@@ -473,29 +469,58 @@ export function DCADashboard() {
   };
 
   const handlePausePlan = async (planId: number) => {
-    const result = await executeTransaction(
-      PAUSE_PLAN_TX,
-      (arg, t) => [arg(planId.toString(), t.UInt64)],
-      500
-    );
+    try {
+      const response = await fetch("/api/relay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "pausePlan",
+          params: { planId },
+          network: NETWORK,
+        }),
+      });
 
-    if (result.success && userCOAAddress) {
-      setTimeout(() => fetchPlans(userCOAAddress), 2000);
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Failed to pause plan:", error);
+        alert(`Failed to pause: ${error.error || "Unknown error"}`);
+        return;
+      }
+
+      if (userCOAAddress) {
+        setTimeout(() => fetchPlans(userCOAAddress), 2000);
+      }
+    } catch (error) {
+      console.error("Error pausing plan:", error);
+      alert("Failed to pause plan. Please try again.");
     }
   };
 
   const handleResumePlan = async (planId: number) => {
-    const result = await executeTransaction(
-      RESUME_PLAN_TX,
-      (arg, t) => [
-        arg(planId.toString(), t.UInt64),
-        arg(null, t.Optional(t.UFix64)),
-      ],
-      500
-    );
+    try {
+      const response = await fetch("/api/relay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "resumePlan",
+          params: { planId },
+          network: NETWORK,
+        }),
+      });
 
-    if (result.success && userCOAAddress) {
-      setTimeout(() => fetchPlans(userCOAAddress), 2000);
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Failed to resume plan:", error);
+        alert(`Failed to resume: ${error.error || "Unknown error"}`);
+        return;
+      }
+
+      if (userCOAAddress) {
+        setTimeout(() => fetchPlans(userCOAAddress), 2000);
+      }
+    } catch (error) {
+      console.error("Error resuming plan:", error);
+      alert("Failed to resume plan. Please try again.");
     }
   };
 
@@ -509,23 +534,29 @@ export function DCADashboard() {
       : 1; // Default to 1 if unlimited
 
     try {
-      // First, reset the next execution time via resume
-      const resumeResult = await executeTransaction(
-        RESUME_PLAN_TX,
-        (arg, t) => [
-          arg(planId.toString(), t.UInt64),
-          arg("60.0", t.Optional(t.UFix64)), // 60 second delay for rescheduling
-        ],
-        500
-      );
+      // First, reset the next execution time via relay API (works for both Metamask and Flow Wallet)
+      const resumeResponse = await fetch("/api/relay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "resumePlan",
+          params: {
+            planId,
+            delaySeconds: 60.0, // 60 second delay for rescheduling
+          },
+          network: NETWORK,
+        }),
+      });
 
-      if (!resumeResult.success) {
-        console.error("Failed to reset plan execution time");
+      if (!resumeResponse.ok) {
+        const error = await resumeResponse.json();
+        console.error("Failed to reset plan execution time:", error);
+        alert(`Failed to resume plan: ${error.error || "Unknown error"}`);
         return;
       }
 
       // Then call the relay API to reschedule
-      const response = await fetch("/api/relay", {
+      const scheduleResponse = await fetch("/api/relay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -534,11 +565,12 @@ export function DCADashboard() {
             planId,
             maxExecutions: remainingExecutions,
           },
+          network: NETWORK,
         }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
+      if (!scheduleResponse.ok) {
+        const error = await scheduleResponse.json();
         console.error("Failed to reschedule plan:", error);
         alert(`Failed to reschedule: ${error.error || "Unknown error"}`);
         return;

@@ -387,6 +387,43 @@ const configureFCL = (network: NetworkType) => {
   console.log(`Relay API configured for ${network}`);
 };
 
+// Helper to execute transaction with retry on sequence number errors
+const executeWithRetry = async (
+  mutateConfig: any,
+  maxRetries: number = 3
+): Promise<{ txId: string; result: any }> => {
+  let lastError: any;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Small delay between retries to let sequence number update
+      if (attempt > 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        console.log(`Retry attempt ${attempt}/${maxRetries}`);
+      }
+
+      const txId = await fcl.mutate(mutateConfig);
+      const result = await fcl.tx(txId).onceSealed();
+
+      return { txId, result };
+    } catch (error: any) {
+      lastError = error;
+      const errorMsg = error.message || "";
+
+      // Check if it's a sequence number error (worth retrying)
+      if (errorMsg.includes("sequence number") || errorMsg.includes("1007")) {
+        console.warn(`Sequence number error on attempt ${attempt}, will retry...`);
+        continue;
+      }
+
+      // For other errors, don't retry
+      throw error;
+    }
+  }
+
+  throw lastError;
+};
+
 // Extract plan ID from transaction events
 const extractPlanId = (events: any[]): number | null => {
   for (const event of events) {
@@ -434,7 +471,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const txId = await fcl.mutate({
+      const { txId, result } = await executeWithRetry({
         cadence: getCreatePlanTx(config.contracts),
         args: (arg: any, t: any) => [
           arg(params.userEVMAddress, t.String),
@@ -455,8 +492,6 @@ export async function POST(request: NextRequest) {
         limit: 9999,
       });
 
-      const result = await fcl.tx(txId).onceSealed();
-
       if (result.errorMessage) {
         return NextResponse.json(
           { success: false, txId, error: result.errorMessage },
@@ -469,6 +504,99 @@ export async function POST(request: NextRequest) {
       console.log("Plan created:", { txId, planId, network: config.network, events: result.events });
 
       return NextResponse.json({ success: true, txId, planId });
+    }
+
+    if (action === "pausePlan") {
+      if (!params.planId) {
+        return NextResponse.json(
+          { success: false, error: "Missing planId parameter" },
+          { status: 400 }
+        );
+      }
+
+      const pausePlanTx = `
+import DCAServiceEVM from ${config.contracts.DCAServiceEVM}
+
+transaction(planId: UInt64) {
+    prepare(signer: auth(Storage) &Account) {}
+
+    execute {
+        DCAServiceEVM.pausePlan(planId: planId)
+        log("Paused plan ".concat(planId.toString()))
+    }
+}
+`;
+
+      const { txId, result } = await executeWithRetry({
+        cadence: pausePlanTx,
+        args: (arg: any, t: any) => [
+          arg(params.planId.toString(), t.UInt64),
+        ],
+        proposer: serviceSigner as any,
+        payer: serviceSigner as any,
+        authorizations: [serviceSigner as any],
+        limit: 9999,
+      });
+
+      if (result.errorMessage) {
+        return NextResponse.json(
+          { success: false, txId, error: result.errorMessage },
+          { status: 500 }
+        );
+      }
+
+      console.log("Plan paused:", { txId, planId: params.planId, network: config.network });
+      return NextResponse.json({ success: true, txId });
+    }
+
+    if (action === "resumePlan") {
+      if (!params.planId) {
+        return NextResponse.json(
+          { success: false, error: "Missing planId parameter" },
+          { status: 400 }
+        );
+      }
+
+      const delaySeconds = params.delaySeconds || 60.0;
+
+      const resumePlanTx = `
+import DCAServiceEVM from ${config.contracts.DCAServiceEVM}
+
+transaction(planId: UInt64, delaySeconds: UFix64?) {
+    prepare(signer: auth(Storage) &Account) {}
+
+    execute {
+        let nextExecutionTime: UFix64? = delaySeconds != nil
+            ? getCurrentBlock().timestamp + delaySeconds!
+            : nil
+
+        DCAServiceEVM.resumePlan(planId: planId, nextExecTime: nextExecutionTime)
+        log("Resumed plan ".concat(planId.toString()))
+    }
+}
+`;
+
+      const { txId, result } = await executeWithRetry({
+        cadence: resumePlanTx,
+        args: (arg: any, t: any) => [
+          arg(params.planId.toString(), t.UInt64),
+          arg(delaySeconds.toFixed(1), t.Optional(t.UFix64)),
+        ],
+        proposer: serviceSigner as any,
+        payer: serviceSigner as any,
+        authorizations: [serviceSigner as any],
+        limit: 9999,
+      });
+
+      if (result.errorMessage) {
+        return NextResponse.json(
+          { success: false, txId, error: result.errorMessage },
+          { status: 500 }
+        );
+      }
+
+      console.log("Plan resumed:", { txId, planId: params.planId, network: config.network });
+      return NextResponse.json({ success: true, txId });
     }
 
     if (action === "schedulePlan") {
@@ -498,7 +626,7 @@ export async function POST(request: NextRequest) {
       // Get fee contract addresses for the network
       const feeContracts = FEE_CONTRACTS[config.network];
 
-      const txId = await fcl.mutate({
+      const { txId, result } = await executeWithRetry({
         cadence: getSchedulePlanTx(config.contracts, feeContracts),
         args: (arg: any, t: any) => [
           arg(params.planId.toString(), t.UInt64),
@@ -509,8 +637,6 @@ export async function POST(request: NextRequest) {
         authorizations: [serviceSigner as any],
         limit: 9999,
       });
-
-      const result = await fcl.tx(txId).onceSealed();
 
       if (result.errorMessage) {
         return NextResponse.json(
