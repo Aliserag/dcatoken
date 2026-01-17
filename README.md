@@ -1,8 +1,6 @@
 # Flow DCA - Dollar-Cost Averaging on Flow
 
-> An educational demo showcasing **Flow Scheduled Transactions**, **EVM DeFi Integration**, and **Sponsored Transactions** - all on Flow blockchain.
-
-## What Makes This Special
+> An educational demo showcasing **Flow Scheduled Transactions**, **Atomic Transactions**, **EVM DeFi Integration**, and **Sponsored Transactions** - all on Flow blockchain.
 
 This project demonstrates Flow's unique capabilities that aren't possible on other blockchains:
 
@@ -10,7 +8,7 @@ This project demonstrates Flow's unique capabilities that aren't possible on oth
 - **Cadence + EVM Interoperability** - Seamlessly interact with EVM DeFi protocols from Cadence
 - **Gas-Free UX** - Metamask users never need FLOW tokens for gas
 
-Unlike Chainlink Automation or off-chain keepers that require external infrastructure, fees, and trust assumptions, Flow's native Scheduled Transactions run directly on blockchain validators. This means zero external dependencies, no keeper fees, and guaranteed execution - all while staying fully decentralized.
+Unlike Chainlink Automation or off-chain keepers that require external infrastructure, fees, and trust assumptions, Flow's native Scheduled Transactions run directly onchain. This means zero external dependencies, no keeper fees, and guaranteed execution - all while staying fully decentralized.
 
 ---
 
@@ -18,7 +16,7 @@ Unlike Chainlink Automation or off-chain keepers that require external infrastru
 
 ### 1. Cadence → EVM Interoperability
 
-**The key innovation:** Cadence smart contracts can directly call any EVM contract on Flow. This isn't a bridge or wrapped call—it's native interoperability where Cadence controls an EVM account (COA) and executes EVM transactions atomically.
+Cadence smart contracts can directly call any EVM contract on Flow. This isn't a bridge or wrapped call—it's native interoperability where Cadence controls an EVM account (COA) and executes EVM transactions atomically.
 
 Here, a Cadence contract executes a UniswapV3 swap by building the calldata and calling the EVM router:
 
@@ -66,7 +64,7 @@ access(all) contract DCAServiceEVM {
 }
 ```
 
-**Why this matters:**
+
 - **Native interop** - Cadence contracts can use any EVM DeFi protocol (Uniswap, Aave, etc.)
 - **Atomic execution** - EVM calls are part of the Cadence transaction (all-or-nothing)
 - **No bridges** - Not a wrapped call or message passing; direct EVM execution
@@ -76,7 +74,7 @@ access(all) contract DCAServiceEVM {
 
 ### 2. Atomic Multi-Step Transactions
 
-**The key innovation:** On EVM chains, wrapping ETH→WETH and approving a spender requires **2 separate transactions**. On Flow, Cadence can execute both EVM calls in **one atomic transaction**—if either fails, both revert.
+On EVM chains, wrapping ETH→WETH and approving a spender requires **2 separate transactions**. On Flow, Cadence can execute both EVM calls in **one atomic transaction**—if either fails, both revert.
 
 **File:** [`src/lib/cadence-transactions.ts`](src/lib/cadence-transactions.ts) - `WRAP_AND_APPROVE_TX`
 
@@ -121,7 +119,7 @@ transaction(amount: UFix64, spenderAddress: String, approvalAmount: UInt256) {
 }
 ```
 
-**Why this matters:**
+
 - **2 EVM transactions → 1 Cadence transaction** - Better UX, lower fees
 - **Atomic guarantees** - Either both succeed or both revert (no stuck approvals)
 - **No ABI libraries needed** - Manual encoding works in pure Cadence
@@ -131,7 +129,7 @@ transaction(amount: UFix64, spenderAddress: String, approvalAmount: UInt256) {
 
 ### 3. Scheduled Transactions (Autonomous Execution)
 
-**The key innovation:** Flow validators natively execute scheduled transactions—no Chainlink Keepers, no Gelato, no off-chain bots. Your handler runs exactly when scheduled, with cryptographic guarantees.
+Flow validators natively execute scheduled transactions—no Chainlink Keepers, no Gelato, no off-chain bots. Your handler runs exactly when scheduled, with cryptographic guarantees.
 
 **File:** [`cadence/contracts/DCAHandlerEVMV4.cdc`](cadence/contracts/DCAHandlerEVMV4.cdc)
 
@@ -193,7 +191,7 @@ access(all) resource Handler: FlowTransactionScheduler.TransactionHandler {
 }
 ```
 
-**Why this matters:**
+
 - **No off-chain infrastructure** - Validators execute your handler, not external keepers
 - **Self-rescheduling loops** - Handler schedules its own next execution (autonomous)
 - **Guaranteed execution** - Scheduled transactions run or fees are refunded
@@ -215,9 +213,9 @@ This separation enables native gas sponsorship without smart contract paymasters
 
 Flow Wallet already sponsors transactions for its users. When a Flow Wallet user interacts with this app, the wallet infrastructure handles gas fees automatically using Flow's native payer separation.
 
-#### Metamask Users (Relay Pattern)
+#### Metamask Users (COA Relay Pattern)
 
-Metamask users interact purely with EVM and don't have FLOW tokens. We solve this with a **relay service** that acts as a paymaster:
+Metamask users interact without paying gas for the scheduled transactions with a type of paymaster made possible through COAs and associated Cadence accounts:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -228,7 +226,7 @@ Metamask users interact purely with EVM and don't have FLOW tokens. We solve thi
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Relay API (Backend Service)                                     │
+│  Relay                                     │
 │  - Receives plan creation requests                              │
 │  - Service account acts as PROPOSER + PAYER + AUTHORIZER        │
 │  - Signs Cadence transactions server-side                       │
@@ -268,7 +266,7 @@ const signWithKey = (privateKey, msgHex, signatureAlgorithm, hashAlgorithm) => {
 };
 ```
 
-**What this demonstrates:**
+
 - Flow's 3-role transaction model enables native sponsorship
 - No smart contract paymaster needed (unlike EVM chains)
 - Backend service pays all Cadence gas fees
@@ -460,7 +458,7 @@ Update `src/config/fcl-config.ts` with your deployed contract addresses.
 
 ## Security Considerations
 
-1. **Token Approvals**: Users should only approve the amount they intend to DCA
+1. **Token Approvals**: Users should only approve the amount they intend to DCA and not leave them open
 2. **Slippage**: Configure appropriate slippage tolerance (default: 1%)
 3. **Service Account**: Keep relay API private keys secure and rotate regularly
 4. **COA Security**: The shared COA can only execute approved operations
